@@ -1,0 +1,118 @@
+% LaTeX snippets for the proposal algorithms.
+% Recommended packages:
+% \usepackage{algorithm}
+% \usepackage{algpseudocode}
+% \usepackage{amsmath,amssymb}
+
+\begin{algorithm}[t]
+\caption{Tokenizer-Aware Exact Masking}
+\label{alg:tokenizer-aware-exact-masking}
+\begin{algorithmic}[1]
+\Require Protected attributes $A_{\mathrm{protected}}$, surface-form sets $\Gamma(a)$ for each $a \in A_{\mathrm{protected}}$, vocabulary $V$, token decoder $\tau(v)$, generated prefix $y_{<t}$, logits $\ell_t$
+\Ensure Masked logits $\ell'_t$
+\State Compile all protected surface forms $\bigcup_{a \in A_{\mathrm{protected}}} \Gamma(a)$ into an Aho--Corasick-style automaton $\mathcal{M}$
+\State Initialize blocked token set $B_t \gets \emptyset$
+\State Let $s_t$ be the automaton state reached after consuming a suffix of $y_{<t}$
+\ForAll{$v \in V$}
+    \State $x_v \gets \tau(v)$
+    \If{consuming $x_v$ from state $s_t$ completes any $\gamma \in \Gamma(a)$ for some $a \in A_{\mathrm{protected}}$}
+        \State $B_t \gets B_t \cup \{v\}$
+    \EndIf
+\EndFor
+\ForAll{$v \in V$}
+    \If{$v \in B_t$}
+        \State $\ell'_t(v) \gets -\infty$
+    \Else
+        \State $\ell'_t(v) \gets \ell_t(v)$
+    \EndIf
+\EndFor
+\State \Return $\ell'_t$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[t]
+\caption{Counterfactual Privacy Cost Estimation}
+\label{alg:counterfactual-privacy-cost}
+\begin{algorithmic}[1]
+\Require Private document $D_i$, policy $P_i$, task instruction $T_{\mathrm{instr},i}$, dialogue history $H_{i,<k}$, candidate response $z=(z_1,\ldots,z_T)$, counterfactual builder $\mathcal{C}$, model $p_\theta$, number of counterfactuals $J$
+\Ensure Worst-case counterfactual privacy loss $L_i^{\max}(z)$
+\For{$j = 1$ to $J$}
+    \State $\widetilde{D}^{(j)}_i \gets \mathcal{C}(D_i, A_{\mathrm{protected},i})$
+\EndFor
+\State Compute private conditional log-likelihood:
+\[
+\log P_{\mathrm{priv}}
+\gets
+\sum_{t=1}^{T}
+\log p_\theta
+\left(
+z_t \mid D_i, P_i, T_{\mathrm{instr},i}, H_{i,<k}, z_{<t}
+\right)
+\]
+\For{$j = 1$ to $J$}
+    \State Compute counterfactual conditional log-likelihood:
+    \[
+    \log P_{\mathrm{cf}}^{(j)}
+    \gets
+    \sum_{t=1}^{T}
+    \log p_\theta
+    \left(
+    z_t \mid \widetilde{D}^{(j)}_i, P_i, T_{\mathrm{instr},i}, H_{i,<k}, z_{<t}
+    \right)
+    \]
+    \State $L_i^{(j)}(z) \gets \log P_{\mathrm{priv}} - \log P_{\mathrm{cf}}^{(j)}$
+\EndFor
+\State $L_i^{\max}(z) \gets \max_{j \in \{1,\ldots,J\}} L_i^{(j)}(z)$
+\State \Return $L_i^{\max}(z)$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[t]
+\caption{Privacy-Budgeted Runtime Selection}
+\label{alg:privacy-budgeted-runtime-selection}
+\begin{algorithmic}[1]
+\Require Candidate actions $Z_k$, protected attributes $A_{\mathrm{protected},i}$, remaining budgets $b_a^{(k)}$, utility function $U(z)$, exact leakage cost $\rho^{\mathrm{exact}}_a(z)$, semantic verifier score $q_a(z)$, counterfactual privacy loss $L_i^{\max}(z)$, weights $\lambda_{\mathrm{sem}}$ and $\lambda_{\mathrm{cf}}$
+\Ensure Selected safe action, rewritten abstraction, or safe refusal
+\State Initialize feasible set $\mathcal{F}_k \gets \emptyset$
+\ForAll{$z \in Z_k$}
+    \ForAll{$a \in A_{\mathrm{protected},i}$}
+        \State Compute per-attribute privacy cost:
+        \[
+        \rho_a(z)
+        \gets
+        \max
+        \left\{
+        \rho^{\mathrm{exact}}_a(z),
+        \lambda_{\mathrm{sem}} q_a(z),
+        \lambda_{\mathrm{cf}} \max(0, L_i^{\max}(z))
+        \right\}
+        \]
+    \EndFor
+    \If{$\rho_a(z) \leq b_a^{(k)}$ for all $a \in A_{\mathrm{protected},i}$}
+        \State $\mathcal{F}_k \gets \mathcal{F}_k \cup \{z\}$
+    \EndIf
+\EndFor
+\If{$\mathcal{F}_k \neq \emptyset$}
+    \State Select highest-utility feasible action:
+    \[
+    z_k^\star
+    \gets
+    \arg\max_{z \in \mathcal{F}_k}
+    U(z; D_i, P_i, T_{\mathrm{instr},i}, H_{i,<k})
+    \]
+    \ForAll{$a \in A_{\mathrm{protected},i}$}
+        \State $b_a^{(k+1)} \gets b_a^{(k)} - \rho_a(z_k^\star)$
+    \EndFor
+    \State \Return $z_k^\star$
+\Else
+    \State $\widetilde{z} \gets \Call{RewriteOrAbstract}{Z_k}$
+    \If{$\widetilde{z}$ satisfies all privacy-budget constraints}
+        \State Update budgets using $\rho_a(\widetilde{z})$
+        \State \Return $\widetilde{z}$
+    \Else
+        \State \Return safe refusal
+    \EndIf
+\EndIf
+\end{algorithmic}
+\end{algorithm}
+
