@@ -18,6 +18,9 @@ when `transformers` is not installed.
 - `docs/proposal_runtime_algorithms.md`: expanded explanation of "runtime",
   tokenizer-aware exact masking, counterfactual privacy cost, privacy-budgeted
   runtime selection, and an end-to-end Mermaid flow diagram.
+- `docs/runpod_induction_training.md`: commands for building the POLAR P1
+  minimal induction dataset, running Qwen3-1.7B zero/few-shot baselines, training
+  a QLoRA inducer, and evaluating predictions.
 
 ## Run the demo
 
