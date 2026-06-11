@@ -1,0 +1,61 @@
+{
+  "domains": {
+    "test": {
+      "customer_support": 23,
+      "cybersecurity": 23,
+      "education": 23,
+      "finance": 23,
+      "housing": 23,
+      "insurance": 23,
+      "legal": 23,
+      "medical": 27,
+      "recruitment": 30,
+      "travel": 23
+    },
+    "train": {
+      "customer_support": 102,
+      "cybersecurity": 105,
+      "education": 105,
+      "finance": 105,
+      "housing": 105,
+      "insurance": 105,
+      "legal": 105,
+      "medical": 122,
+      "recruitment": 140,
+      "travel": 105
+    },
+    "val": {
+      "customer_support": 21,
+      "cybersecurity": 22,
+      "education": 22,
+      "finance": 22,
+      "housing": 22,
+      "insurance": 22,
+      "legal": 22,
+      "medical": 26,
+      "recruitment": 30,
+      "travel": 22
+    }
+  },
+  "filter": {
+    "metadata.privacy_level": 1,
+    "metadata.privacy_type": "explicit_field_constraints"
+  },
+  "input": "polar_bench_upstream/data/privacy_benchmark_rendered_repaired.json",
+  "p1_samples": 1571,
+  "seed": 42,
+  "splits": {
+    "test": 241,
+    "train": 1099,
+    "val": 231
+  },
+  "target_schema": {
+    "scoring_targets": {
+      "allowed_values": "list[str]",
+      "do_not_disclose_values": "list[str]"
+    }
+  },
+  "total_samples": 7852,
+  "train_ratio": 0.7,
+  "val_ratio": 0.15
+}
