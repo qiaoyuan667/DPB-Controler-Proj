@@ -35,6 +35,12 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional detailed JSONL path. Defaults to <predictions>.details.jsonl.",
     )
+    parser.add_argument(
+        "--show-examples",
+        type=int,
+        default=0,
+        help="Print the first N gold/prediction pairs for debugging.",
+    )
     return parser.parse_args()
 
 
@@ -57,9 +63,11 @@ def main() -> None:
     args = parse_args()
     rows = read_jsonl(args.predictions)
     details = []
+    examples_to_print = []
     for row in rows:
         prediction, parse_error = _prediction_from_row(row)
-        metrics = evaluate_prediction(_gold_from_row(row), prediction)
+        gold = _gold_from_row(row)
+        metrics = evaluate_prediction(gold, prediction)
         details.append(
             {
                 "sample_id": row.get("sample_id"),
@@ -69,6 +77,17 @@ def main() -> None:
                 "metrics": metrics,
             }
         )
+        if len(examples_to_print) < args.show_examples:
+            examples_to_print.append(
+                {
+                    "sample_id": row.get("sample_id"),
+                    "domain": row.get("domain"),
+                    "gold": gold,
+                    "prediction": prediction,
+                    "prediction_text": row.get("prediction_text"),
+                    "metrics": metrics,
+                }
+            )
 
     summary = summarize_evaluations(details)
     summary["predictions"] = str(args.predictions)
@@ -82,8 +101,10 @@ def main() -> None:
     write_jsonl(details_path, details)
 
     print(pretty_json_dumps(summary))
+    if examples_to_print:
+        print("\nExamples:")
+        print(pretty_json_dumps(examples_to_print))
 
 
 if __name__ == "__main__":
     main()
-
