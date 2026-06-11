@@ -17,6 +17,7 @@ POLAR-aligned target:
 From the repository root:
 
 ```bash
+git submodule update --init --recursive
 pip install -r requirements-train.txt
 ```
 
@@ -110,4 +111,3 @@ Secondary metrics:
 - `do_not_disclose_values` precision / F1
 - `allowed_values` precision / recall / F1
 - exact set match
-
