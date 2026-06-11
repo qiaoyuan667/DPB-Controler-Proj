@@ -129,6 +129,55 @@ python scripts/eval_induction_predictions.py \
   --predictions runs/induction/qwen3_1p7b_qlora_test.jsonl
 ```
 
+## 7. Epoch Ablation and Run Comparison
+
+Train 1/2/3 epoch adapters in separate directories:
+
+```bash
+for EPOCHS in 1 2 3; do
+  python scripts/train_inducer_qlora.py \
+    --train-file data/induction/p1_scoring_targets/train.jsonl \
+    --val-file data/induction/p1_scoring_targets/val.jsonl \
+    --output-dir runs/induction/qwen3_1p7b_lora_no4bit_${EPOCHS}epoch_v2 \
+    --model Qwen/Qwen3-1.7B \
+    --no-4bit \
+    --bf16 \
+    --epochs ${EPOCHS} \
+    --batch-size 1 \
+    --gradient-accumulation-steps 8 \
+    --learning-rate 2e-4 \
+    --max-length 2048
+done
+```
+
+Run each adapter on the test split:
+
+```bash
+for EPOCHS in 1 2 3; do
+  python scripts/run_induction_inference.py \
+    --input data/induction/p1_scoring_targets/test.jsonl \
+    --output runs/induction/qwen3_1p7b_lora_no4bit_${EPOCHS}epoch_v2_test.jsonl \
+    --model Qwen/Qwen3-1.7B \
+    --adapter runs/induction/qwen3_1p7b_lora_no4bit_${EPOCHS}epoch_v2 \
+    --torch-dtype bfloat16
+
+  python scripts/eval_induction_predictions.py \
+    --predictions runs/induction/qwen3_1p7b_lora_no4bit_${EPOCHS}epoch_v2_test.jsonl
+done
+```
+
+Compare zero-shot, few-shot, and LoRA runs:
+
+```bash
+python scripts/compare_induction_runs.py \
+  runs/induction/qwen3_1p7b_zero_shot.jsonl.summary.json \
+  runs/induction/qwen3_1p7b_few_shot_3.jsonl.summary.json \
+  runs/induction/qwen3_1p7b_lora_no4bit_1epoch_v2_test.jsonl.summary.json \
+  runs/induction/qwen3_1p7b_lora_no4bit_2epochs_v2_test.jsonl.summary.json \
+  runs/induction/qwen3_1p7b_lora_no4bit_3epochs_v2_test.jsonl.summary.json \
+  --output runs/induction/induction_comparison.csv
+```
+
 If `bitsandbytes` fails with `Missing dependency: libnvJitLink.so.13`, do not
 use `--load-in-4bit` for Qwen3-1.7B inference. The model is small enough to run
 in bf16/fp16 on common 24GB GPUs. For training, either fix the CUDA/bitsandbytes
