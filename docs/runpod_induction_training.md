@@ -134,6 +134,13 @@ use `--load-in-4bit` for Qwen3-1.7B inference. The model is small enough to run
 in bf16/fp16 on common 24GB GPUs. For training, either fix the CUDA/bitsandbytes
 stack or run LoRA without 4-bit:
 
+For 24GB GPUs, start with `--max-length 2048`. If CUDA reports fragmentation,
+set:
+
+```bash
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+```
+
 ```bash
 python scripts/train_inducer_qlora.py \
   --train-file data/induction/p1_scoring_targets/train.jsonl \
@@ -146,7 +153,7 @@ python scripts/train_inducer_qlora.py \
   --batch-size 1 \
   --gradient-accumulation-steps 8 \
   --learning-rate 2e-4 \
-  --max-length 4096
+  --max-length 2048
 ```
 
 ## Primary Metric

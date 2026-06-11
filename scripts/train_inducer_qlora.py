@@ -37,6 +37,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lora-alpha", type=int, default=32)
     parser.add_argument("--lora-dropout", type=float, default=0.05)
     parser.add_argument("--no-4bit", action="store_true", help="Disable QLoRA 4-bit loading.")
+    parser.add_argument(
+        "--no-gradient-checkpointing",
+        action="store_true",
+        help="Disable gradient checkpointing. By default it is enabled to reduce VRAM.",
+    )
     parser.add_argument("--bf16", action="store_true", help="Use bf16 training.")
     parser.add_argument("--fp16", action="store_true", help="Use fp16 training.")
     parser.add_argument("--trust-remote-code", action="store_true")
@@ -131,6 +136,7 @@ def build_training_arguments(TrainingArguments, args: argparse.Namespace):
         "fp16": args.fp16,
         "report_to": "none",
         "optim": "paged_adamw_8bit" if not args.no_4bit else "adamw_torch",
+        "gradient_checkpointing": not args.no_gradient_checkpointing,
     }
 
     parameters = inspect.signature(TrainingArguments).parameters
@@ -201,6 +207,9 @@ def main() -> None:
         quantization_config=quantization_config,
         trust_remote_code=args.trust_remote_code,
     )
+    model.config.use_cache = False
+    if not args.no_gradient_checkpointing:
+        model.gradient_checkpointing_enable()
     if not args.no_4bit:
         model = prepare_model_for_kbit_training(model)
 
