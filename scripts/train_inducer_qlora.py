@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -110,6 +111,37 @@ def tokenize_record(tokenizer, record: dict[str, Any], max_length: int) -> dict[
     }
 
 
+def build_training_arguments(TrainingArguments, args: argparse.Namespace):
+    kwargs = {
+        "output_dir": args.output_dir,
+        "per_device_train_batch_size": args.batch_size,
+        "per_device_eval_batch_size": args.batch_size,
+        "gradient_accumulation_steps": args.gradient_accumulation_steps,
+        "learning_rate": args.learning_rate,
+        "num_train_epochs": args.epochs,
+        "max_steps": args.max_steps,
+        "warmup_ratio": args.warmup_ratio,
+        "logging_steps": args.logging_steps,
+        "eval_steps": args.eval_steps,
+        "save_steps": args.save_steps,
+        "save_strategy": "steps",
+        "save_total_limit": 3,
+        "load_best_model_at_end": False,
+        "bf16": args.bf16,
+        "fp16": args.fp16,
+        "report_to": "none",
+        "optim": "paged_adamw_8bit" if not args.no_4bit else "adamw_torch",
+    }
+
+    parameters = inspect.signature(TrainingArguments).parameters
+    if "eval_strategy" in parameters:
+        kwargs["eval_strategy"] = "steps"
+    else:
+        kwargs["evaluation_strategy"] = "steps"
+
+    return TrainingArguments(**kwargs)
+
+
 @dataclass
 class CausalJsonDataCollator:
     tokenizer: Any
@@ -200,27 +232,7 @@ def main() -> None:
         [tokenize_record(tokenizer, record, args.max_length) for record in val_records]
     )
 
-    training_args = TrainingArguments(
-        output_dir=args.output_dir,
-        per_device_train_batch_size=args.batch_size,
-        per_device_eval_batch_size=args.batch_size,
-        gradient_accumulation_steps=args.gradient_accumulation_steps,
-        learning_rate=args.learning_rate,
-        num_train_epochs=args.epochs,
-        max_steps=args.max_steps,
-        warmup_ratio=args.warmup_ratio,
-        logging_steps=args.logging_steps,
-        eval_steps=args.eval_steps,
-        save_steps=args.save_steps,
-        evaluation_strategy="steps",
-        save_strategy="steps",
-        save_total_limit=3,
-        load_best_model_at_end=False,
-        bf16=args.bf16,
-        fp16=args.fp16,
-        report_to="none",
-        optim="paged_adamw_8bit" if not args.no_4bit else "adamw_torch",
-    )
+    training_args = build_training_arguments(TrainingArguments, args)
 
     trainer = Trainer(
         model=model,
