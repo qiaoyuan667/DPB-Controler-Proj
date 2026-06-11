@@ -24,6 +24,22 @@ git -C polar_bench_upstream lfs pull
 pip install -r requirements-train.txt
 ```
 
+If model loading fails with `RuntimeError: operator torchvision::nms does not
+exist`, the RunPod image has an incompatible `torchvision` package. This project
+uses text-only Qwen models, so the simplest fix is to remove `torchvision`:
+
+```bash
+pip uninstall -y torchvision
+python - <<'PY'
+import torch
+print("torch", torch.__version__)
+PY
+```
+
+Then rerun the inference or training command. If another project on the same Pod
+needs vision models, install a `torchvision` wheel that exactly matches the
+installed PyTorch/CUDA version instead of uninstalling it.
+
 Confirm the repaired dataset is the real JSON file, not a Git LFS pointer:
 
 ```bash
@@ -62,7 +78,7 @@ python scripts/run_induction_inference.py \
   --input data/induction/p1_scoring_targets/test.jsonl \
   --output runs/induction/qwen3_1p7b_zero_shot.jsonl \
   --model Qwen/Qwen3-1.7B \
-  --load-in-4bit
+  --torch-dtype bfloat16
 
 python scripts/eval_induction_predictions.py \
   --predictions runs/induction/qwen3_1p7b_zero_shot.jsonl
@@ -77,7 +93,7 @@ python scripts/run_induction_inference.py \
   --model Qwen/Qwen3-1.7B \
   --few-shot-file data/induction/p1_scoring_targets/train.jsonl \
   --num-shots 3 \
-  --load-in-4bit
+  --torch-dtype bfloat16
 
 python scripts/eval_induction_predictions.py \
   --predictions runs/induction/qwen3_1p7b_few_shot_3.jsonl
@@ -107,10 +123,30 @@ python scripts/run_induction_inference.py \
   --output runs/induction/qwen3_1p7b_qlora_test.jsonl \
   --model Qwen/Qwen3-1.7B \
   --adapter runs/induction/qwen3_1p7b_qlora \
-  --load-in-4bit
+  --torch-dtype bfloat16
 
 python scripts/eval_induction_predictions.py \
   --predictions runs/induction/qwen3_1p7b_qlora_test.jsonl
+```
+
+If `bitsandbytes` fails with `Missing dependency: libnvJitLink.so.13`, do not
+use `--load-in-4bit` for Qwen3-1.7B inference. The model is small enough to run
+in bf16/fp16 on common 24GB GPUs. For training, either fix the CUDA/bitsandbytes
+stack or run LoRA without 4-bit:
+
+```bash
+python scripts/train_inducer_qlora.py \
+  --train-file data/induction/p1_scoring_targets/train.jsonl \
+  --val-file data/induction/p1_scoring_targets/val.jsonl \
+  --output-dir runs/induction/qwen3_1p7b_lora_no4bit \
+  --model Qwen/Qwen3-1.7B \
+  --no-4bit \
+  --bf16 \
+  --epochs 3 \
+  --batch-size 1 \
+  --gradient-accumulation-steps 8 \
+  --learning-rate 2e-4 \
+  --max-length 4096
 ```
 
 ## Primary Metric
