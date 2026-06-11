@@ -61,7 +61,7 @@ data/induction/p1_scoring_targets/metadata.json
 python scripts/run_induction_inference.py \
   --input data/induction/p1_scoring_targets/test.jsonl \
   --output runs/induction/qwen3_1p7b_zero_shot.jsonl \
-  --model Qwen/Qwen3-1.7B-Instruct \
+  --model Qwen/Qwen3-1.7B \
   --load-in-4bit
 
 python scripts/eval_induction_predictions.py \
@@ -74,7 +74,7 @@ python scripts/eval_induction_predictions.py \
 python scripts/run_induction_inference.py \
   --input data/induction/p1_scoring_targets/test.jsonl \
   --output runs/induction/qwen3_1p7b_few_shot_3.jsonl \
-  --model Qwen/Qwen3-1.7B-Instruct \
+  --model Qwen/Qwen3-1.7B \
   --few-shot-file data/induction/p1_scoring_targets/train.jsonl \
   --num-shots 3 \
   --load-in-4bit
@@ -90,7 +90,7 @@ python scripts/train_inducer_qlora.py \
   --train-file data/induction/p1_scoring_targets/train.jsonl \
   --val-file data/induction/p1_scoring_targets/val.jsonl \
   --output-dir runs/induction/qwen3_1p7b_qlora \
-  --model Qwen/Qwen3-1.7B-Instruct \
+  --model Qwen/Qwen3-1.7B \
   --bf16 \
   --epochs 3 \
   --batch-size 1 \
@@ -105,7 +105,7 @@ python scripts/train_inducer_qlora.py \
 python scripts/run_induction_inference.py \
   --input data/induction/p1_scoring_targets/test.jsonl \
   --output runs/induction/qwen3_1p7b_qlora_test.jsonl \
-  --model Qwen/Qwen3-1.7B-Instruct \
+  --model Qwen/Qwen3-1.7B \
   --adapter runs/induction/qwen3_1p7b_qlora \
   --load-in-4bit
 

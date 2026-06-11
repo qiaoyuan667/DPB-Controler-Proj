@@ -24,7 +24,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--input", required=True, help="Input split JSONL.")
     parser.add_argument("--output", required=True, help="Predictions JSONL.")
-    parser.add_argument("--model", default="Qwen/Qwen3-1.7B-Instruct")
+    parser.add_argument("--model", default="Qwen/Qwen3-1.7B")
     parser.add_argument("--adapter", default=None, help="Optional PEFT/LoRA adapter path.")
     parser.add_argument("--few-shot-file", default=None, help="JSONL file for few-shot examples.")
     parser.add_argument("--num-shots", type=int, default=0)
@@ -189,4 +189,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
