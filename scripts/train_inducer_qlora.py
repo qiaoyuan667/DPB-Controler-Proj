@@ -98,17 +98,26 @@ def tokenize_record(tokenizer, record: dict[str, Any], max_length: int) -> dict[
         add_generation_prompt=False,
     )
     prompt_ids = tokenizer(prompt_text, add_special_tokens=False)["input_ids"]
-    tokenized = tokenizer(
-        full_text,
-        add_special_tokens=False,
-        truncation=True,
-        max_length=max_length,
-    )
-    input_ids = tokenized["input_ids"]
-    attention_mask = tokenized["attention_mask"]
-    labels = list(input_ids)
-    prompt_length = min(len(prompt_ids), len(labels))
-    labels[:prompt_length] = [-100] * prompt_length
+    full_ids = tokenizer(full_text, add_special_tokens=False)["input_ids"]
+
+    if len(full_ids) >= len(prompt_ids) and full_ids[: len(prompt_ids)] == prompt_ids:
+        target_ids = full_ids[len(prompt_ids) :]
+    else:
+        target_text = str(record["target_text"])
+        if tokenizer.eos_token:
+            target_text += tokenizer.eos_token
+        target_ids = tokenizer(target_text, add_special_tokens=False)["input_ids"]
+
+    if not target_ids:
+        raise ValueError(f"record {record.get('sample_id', '<unknown>')} has no target tokens")
+
+    target_ids = target_ids[:max_length]
+    prompt_budget = max(0, max_length - len(target_ids))
+    prompt_ids = prompt_ids[-prompt_budget:] if prompt_budget else []
+
+    input_ids = prompt_ids + target_ids
+    attention_mask = [1] * len(input_ids)
+    labels = [-100] * len(prompt_ids) + list(target_ids)
     return {
         "input_ids": input_ids,
         "attention_mask": attention_mask,

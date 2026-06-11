@@ -11,6 +11,24 @@ from privacy_runtime.induction_data import (
     split_records_by_domain,
     validate_scoring_target,
 )
+from scripts.train_inducer_qlora import tokenize_record
+
+
+class TinyTokenizer:
+    eos_token = "<eos>"
+
+    def __call__(
+        self,
+        text: str,
+        *,
+        add_special_tokens: bool = False,
+        truncation: bool = False,
+        max_length: int | None = None,
+    ) -> dict[str, list[int]]:
+        ids = list(range(1, len(text.split()) + 1))
+        if truncation and max_length is not None:
+            ids = ids[:max_length]
+        return {"input_ids": ids, "attention_mask": [1] * len(ids)}
 
 
 class InductionDataTests(unittest.TestCase):
@@ -107,7 +125,15 @@ class InductionDataTests(unittest.TestCase):
         self.assertEqual(len(splits["test"]), 4)
         self.assertEqual({record["domain"] for record in splits["test"]}, {"medical", "finance"})
 
+    def test_tokenize_record_preserves_target_labels_when_truncating(self) -> None:
+        record = build_induction_record(self.sample())
+        record["input"] = " ".join(["verylong"] * 200)
+
+        tokenized = tokenize_record(TinyTokenizer(), record, max_length=32)
+
+        self.assertEqual(len(tokenized["input_ids"]), 32)
+        self.assertTrue(any(label != -100 for label in tokenized["labels"]))
+
 
 if __name__ == "__main__":
     unittest.main()
-
