@@ -18,8 +18,22 @@ From the repository root:
 
 ```bash
 git submodule update --init --recursive
+apt-get update && apt-get install -y git-lfs
+git lfs install
+git -C polar_bench_upstream lfs pull
 pip install -r requirements-train.txt
 ```
+
+Confirm the repaired dataset is the real JSON file, not a Git LFS pointer:
+
+```bash
+ls -lh polar_bench_upstream/data/privacy_benchmark_rendered_repaired.json
+head -n 2 polar_bench_upstream/data/privacy_benchmark_rendered_repaired.json
+```
+
+The file should be hundreds of MB and start with `[` followed by JSON objects. If
+it starts with `version https://git-lfs.github.com/spec/v1`, run the Git LFS
+commands above again inside the repository.
 
 ## 2. Build P1 Dataset
 

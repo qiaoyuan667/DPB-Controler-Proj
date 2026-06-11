@@ -21,8 +21,32 @@ Do not explain your answer. Do not include chain-of-thought."""
 
 def load_polar_repaired(path: str | Path = DEFAULT_REPAIRED_POLAR_PATH) -> list[dict[str, Any]]:
     dataset_path = Path(path)
+    if not dataset_path.exists():
+        raise FileNotFoundError(f"{dataset_path} does not exist")
     with dataset_path.open("r", encoding="utf-8") as handle:
-        data = json.load(handle)
+        head = handle.read(256)
+        stripped = head.strip()
+        if not stripped:
+            raise ValueError(
+                f"{dataset_path} is empty. If this file comes from POLAR-Bench, "
+                "initialize Git LFS and run `git -C polar_bench_upstream lfs pull`."
+            )
+        if stripped.startswith("version https://git-lfs.github.com/spec/v1"):
+            raise ValueError(
+                f"{dataset_path} is a Git LFS pointer, not the real dataset. "
+                "Install Git LFS, then run `git submodule update --init --recursive` "
+                "and `git -C polar_bench_upstream lfs pull`."
+            )
+        handle.seek(0)
+        try:
+            data = json.load(handle)
+        except json.JSONDecodeError as exc:
+            preview = head.replace("\n", "\\n")[:120]
+            raise ValueError(
+                f"{dataset_path} is not valid JSON. First bytes: {preview!r}. "
+                "If this is a Git LFS-managed POLAR file, run "
+                "`git -C polar_bench_upstream lfs pull`."
+            ) from exc
     if not isinstance(data, list):
         raise ValueError(f"{dataset_path} must contain a JSON array")
     return [item for item in data if isinstance(item, dict)]
@@ -356,4 +380,3 @@ def _unique_keep_order(values: Iterable[str]) -> list[str]:
 def _strip_code_fence(text: str) -> str:
     fence = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", text, flags=re.DOTALL | re.IGNORECASE)
     return fence.group(1).strip() if fence else text
-
