@@ -23,6 +23,16 @@ python examples/apertus_hardmask_demo.py \
   --max-new-tokens 20
 ```
 
+File-based input:
+
+```bash
+python examples/apertus_hardmask_demo.py \
+  --protected-json test_data/protected.json \
+  --source-file test_data/source_document.txt \
+  --attacker-file test_data/attacker.txt \
+  --max-new-tokens 40
+```
+
 Run with a step-by-step greedy hard-mask trace:
 
 ```bash
@@ -34,6 +44,9 @@ python examples/apertus_hardmask_demo.py \
   --trace-generation \
   --trace-top-k 5
 ```
+
+When tracing is enabled, the main output contains a trace id and path, and the
+detailed steps are written to `outputs/traces/<trace_id>.json`.
 
 For tokenizer-only inspection:
 
@@ -52,9 +65,11 @@ python examples/apertus_hardmask_demo.py \
 - `--source-text`: Trusted source document visible to the trusted model.
 - `--source-file`: UTF-8 text file containing the trusted source document.
 - `--attacker-text`: External attacker/user message sent to the trusted model.
+- `--attacker-file`: UTF-8 text file containing the attacker/user message.
 - `--max-new-tokens`: Maximum generated tokens for both baseline and hard-mask replies.
 - `--trace-generation`: Add a step-by-step greedy hard-mask decoding trace.
 - `--trace-top-k`: Number of raw/masked top tokens to show per traced step.
+- `--trace-output-dir`: Directory for detailed trace JSON files.
 - `--inspect-mask-only`: Load tokenizer only and print blocked token ids without generation.
 
 The source document is placed in the system message. It is not automatically
@@ -72,11 +87,13 @@ source document do not count as already generated output.
 - `comparison.replies_differ`: Whether baseline and hard-mask replies differ.
 - `mask_summary.rewind_event_count`: Number of full protected-value leaks that triggered rewind.
 - `mask_summary.fallback_used`: Whether repeated rewinds exhausted the retry budget.
-- `message_roles`: Message role sequence sent to the model.
-- `hardmask_trace.steps`: Optional per-step trace when `--trace-generation` is set.
+- `hardmask_trace.trace_id`: Trace file id when `--trace-generation` is set.
+- `hardmask_trace.trace_path`: JSON file containing detailed trace output.
+- `hardmask_trace.rewind_event_count`: Number of rewind events in the trace file.
+- Trace file `steps`: Optional per-step trace when `--trace-generation` is set.
 - `hardmask_trace.steps[].top_after_state_bans`: Top tokens after any rewind-state bans.
 - `hardmask_trace.steps[].selected_token`: Token selected at this step.
-- `hardmask_trace.rewind_events`: Full protected-value leaks and where generation rewound.
+- Trace file `rewind_events`: Full protected-value leaks and where generation rewound.
 
 Unlike prefix blocking, this mode does not block partial prefixes such as
 `alice@example.`. It only reacts after a complete protected value is detected,

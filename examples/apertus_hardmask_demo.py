@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -48,7 +50,12 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="UTF-8 text file containing trusted source document text.",
     )
-    parser.add_argument("--attacker-text", required=True)
+    parser.add_argument("--attacker-text", default=None)
+    parser.add_argument(
+        "--attacker-file",
+        default=None,
+        help="UTF-8 text file containing the attacker/user message.",
+    )
     parser.add_argument("--system-text", default="You are a helpful trusted assistant.")
     parser.add_argument("--max-new-tokens", type=int, default=256)
     parser.add_argument("--temperature", type=float, default=0.0)
@@ -65,6 +72,11 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=5,
         help="Number of raw/masked top tokens to show per traced step.",
+    )
+    parser.add_argument(
+        "--trace-output-dir",
+        default="outputs/traces",
+        help="Directory for detailed trace JSON files.",
     )
     parser.add_argument(
         "--inspect-mask-only",
@@ -86,10 +98,11 @@ def main() -> None:
 
     policy = privacy_policy_from_protected_attributes(protected_attributes)
     source_text = load_source_text(args.source_text, args.source_file)
+    attacker_text = load_attacker_text(args.attacker_text, args.attacker_file)
     messages = build_trusted_messages(
         system_text=args.system_text,
         source_text=source_text,
-        attacker_text=args.attacker_text,
+        attacker_text=attacker_text,
     )
 
     if args.inspect_mask_only:
@@ -98,8 +111,8 @@ def main() -> None:
             protected_attributes=protected_attributes,
             local_files_only=not args.allow_download,
         )
-        payload["attacker_text"] = args.attacker_text
-        payload.update(source_metadata(source_text, messages))
+        payload["attacker_text"] = attacker_text
+        payload.update(source_metadata(source_text))
         payload["protected_values_found_in_reply"] = []
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return
@@ -125,18 +138,28 @@ def main() -> None:
         top_k=args.trace_top_k,
         trace=args.trace_generation,
     )
-    trace_payload = {
-        "hardmask_trace_reply": result.text,
-        "steps": list(result.steps),
-        "rewind_events": list(result.rewind_events),
-        "fallback_used": result.fallback_used,
-    } if args.trace_generation or result.rewind_events else None
+    trace_payload = None
+    if args.trace_generation:
+        trace_payload = build_trace_payload(
+            attacker_text=attacker_text,
+            source_text=source_text,
+            model_path=result.model_path,
+            protected_attribute_count=result.protected_attribute_count,
+            hardmask_reply=result.text,
+            steps=list(result.steps),
+            rewind_events=list(result.rewind_events),
+            fallback_used=result.fallback_used,
+        )
+        trace_id, trace_path = write_trace_payload(
+            trace_payload,
+            output_dir=args.trace_output_dir,
+        )
 
     payload = {
-        "attacker_text": args.attacker_text,
+        "attacker_text": attacker_text,
         "unmasked_reply": unmasked_reply,
         "hardmask_reply": result.text,
-        **source_metadata(source_text, messages),
+        **source_metadata(source_text),
         "comparison": {
             "unmasked_protected_values_found": protected_values_found(
                 unmasked_reply,
@@ -160,7 +183,11 @@ def main() -> None:
         ),
     }
     if trace_payload is not None:
-        payload["hardmask_trace"] = trace_payload
+        payload["hardmask_trace"] = {
+            "trace_id": trace_id,
+            "trace_path": str(trace_path),
+            "rewind_event_count": len(result.rewind_events),
+        }
     print(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
@@ -171,6 +198,18 @@ def load_source_text(source_text: str | None, source_file: str | None) -> str:
     if source_file:
         chunks.append(Path(source_file).read_text(encoding="utf-8").strip())
     return "\n\n".join(chunk for chunk in chunks if chunk)
+
+
+def load_attacker_text(attacker_text: str | None, attacker_file: str | None) -> str:
+    chunks: list[str] = []
+    if attacker_text:
+        chunks.append(attacker_text.strip())
+    if attacker_file:
+        chunks.append(Path(attacker_file).read_text(encoding="utf-8").strip())
+    text = "\n\n".join(chunk for chunk in chunks if chunk)
+    if not text:
+        raise ValueError("provide --attacker-text or --attacker-file")
+    return text
 
 
 def build_trusted_messages(
@@ -190,13 +229,61 @@ def build_trusted_messages(
 
 def source_metadata(
     source_text: str,
-    messages: list[dict[str, str]],
 ) -> dict[str, object]:
     return {
         "source_provided": bool(source_text),
         "source_length_chars": len(source_text),
-        "message_roles": [message["role"] for message in messages],
     }
+
+
+def build_trace_payload(
+    *,
+    attacker_text: str,
+    source_text: str,
+    model_path: str,
+    protected_attribute_count: int,
+    hardmask_reply: str,
+    steps: list[dict[str, object]],
+    rewind_events: list[dict[str, object]],
+    fallback_used: bool,
+) -> dict[str, object]:
+    return {
+        "attacker_text": attacker_text,
+        "source_provided": bool(source_text),
+        "source_length_chars": len(source_text),
+        "model_path": model_path,
+        "protected_attribute_count": protected_attribute_count,
+        "hardmask_trace_reply": hardmask_reply,
+        "steps": steps,
+        "rewind_events": rewind_events,
+        "fallback_used": fallback_used,
+    }
+
+
+def write_trace_payload(
+    payload: dict[str, object],
+    *,
+    output_dir: str,
+) -> tuple[str, Path]:
+    trace_id = make_trace_id(
+        attacker_text=str(payload.get("attacker_text") or ""),
+        rewind_events=payload.get("rewind_events"),
+    )
+    trace_dir = Path(output_dir)
+    trace_dir.mkdir(parents=True, exist_ok=True)
+    trace_path = trace_dir / f"{trace_id}.json"
+    trace_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return trace_id, trace_path
+
+
+def make_trace_id(attacker_text: str, rewind_events: object) -> str:
+    event_count = len(rewind_events) if isinstance(rewind_events, list) else 0
+    digest = hashlib.sha1(attacker_text.encode("utf-8")).hexdigest()[:8]
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    return f"trace-{timestamp}-rw{event_count}-{digest}"
 
 
 def inspect_mask_only(
