@@ -13,9 +13,12 @@ from .hf import HFPrivacyLogitsProcessor
 from .hf_trusted_model import (
     DEFAULT_APERTUS_MODEL_ID,
     DEFAULT_APERTUS_MODEL_PATH,
+    HFRewindGenerationResult,
     HFTrustedGenerationResult,
     HFTrustedModel,
+    find_first_protected_value,
     render_chat_prompt,
+    rewind_token_index_for_char,
 )
 from .policy import PrivacyPolicy, ProtectedFact
 from .protected_attributes import (
@@ -45,6 +48,7 @@ __all__ = [
     "ForbiddenStringConstraint",
     "GuardDecision",
     "HFPrivacyLogitsProcessor",
+    "HFRewindGenerationResult",
     "HFTrustedGenerationResult",
     "HFTrustedModel",
     "HuggingFaceVocabulary",
@@ -69,6 +73,8 @@ __all__ = [
     "TokenVocabulary",
     "VerificationResult",
     "build_counterfactual_text",
+    "find_first_protected_value",
     "privacy_policy_from_protected_attributes",
     "render_chat_prompt",
+    "rewind_token_index_for_char",
 ]

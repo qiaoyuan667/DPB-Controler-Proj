@@ -14,7 +14,9 @@ from privacy_runtime import (
     ForbiddenStringConstraint,
     HFPrivacyLogitsProcessor,
     HFTrustedModel,
+    find_first_protected_value,
     privacy_policy_from_protected_attributes,
+    rewind_token_index_for_char,
 )
 
 
@@ -302,6 +304,29 @@ class ApertusHardMaskTests(unittest.TestCase):
         )
 
         self.assertEqual(found, ["alice@example.com"])
+
+    def test_find_first_protected_value_returns_earliest_match(self) -> None:
+        leak = find_first_protected_value(
+            "Alice's email is alice@example.com.",
+            ("alice@example.com", "Alice Smith"),
+        )
+
+        self.assertIsNotNone(leak)
+        self.assertEqual(leak["value"], "alice@example.com")
+        self.assertEqual(
+            "Alice's email is alice@example.com."[leak["start"] : leak["end"]],
+            "alice@example.com",
+        )
+
+    def test_rewind_token_index_points_to_leak_start_token(self) -> None:
+        token_ids = [1, 0, 2]
+        index = rewind_token_index_for_char(
+            FakeTokenizer(),
+            token_ids,
+            len(" safe"),
+        )
+
+        self.assertEqual(index, 1)
 
     def test_demo_payload_should_not_use_trusted_reply_alias(self) -> None:
         payload = {

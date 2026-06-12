@@ -1,7 +1,9 @@
 # Apertus Hard-Mask Demo
 
-This demo compares a local trusted model reply before and after decoder-time
-hard masking.
+This demo compares a local trusted model reply before and after rewind-on-leak
+hard masking. The protected value may be generated internally, but if the full
+protected value appears in the assistant text, generation rewinds to the start
+of that value and retries with the leaking token banned at that state.
 
 ## Quick Run
 
@@ -64,18 +66,21 @@ source document do not count as already generated output.
 ## Output Fields
 
 - `unmasked_reply`: Model reply without hard mask.
-- `hardmask_reply`: Model reply with decoder-time hard mask.
+- `hardmask_reply`: Model reply after rewind-on-leak hard masking.
 - `comparison.unmasked_protected_values_found`: Protected values found in the baseline reply.
 - `comparison.hardmask_protected_values_found`: Protected values found in the hard-mask reply.
 - `comparison.replies_differ`: Whether baseline and hard-mask replies differ.
-- `mask_summary.blocked_token_count_at_start`: Tokens blocked before any new text is generated.
-- `mask_summary.blocked_token_sample`: Sample of blocked token ids and reasons.
+- `mask_summary.rewind_event_count`: Number of full protected-value leaks that triggered rewind.
+- `mask_summary.fallback_used`: Whether repeated rewinds exhausted the retry budget.
 - `message_roles`: Message role sequence sent to the model.
 - `hardmask_trace.steps`: Optional per-step trace when `--trace-generation` is set.
-- `hardmask_trace.steps[].raw_top`: Top tokens and probabilities before hard mask.
-- `hardmask_trace.steps[].masked_top`: Top tokens and probabilities after hard mask.
-- `hardmask_trace.steps[].raw_top_was_masked`: Whether the original top token was blocked.
-- `hardmask_trace.steps[].selected_token`: Token selected after hard mask.
+- `hardmask_trace.steps[].top_after_state_bans`: Top tokens after any rewind-state bans.
+- `hardmask_trace.steps[].selected_token`: Token selected at this step.
+- `hardmask_trace.rewind_events`: Full protected-value leaks and where generation rewound.
+
+Unlike prefix blocking, this mode does not block partial prefixes such as
+`alice@example.`. It only reacts after a complete protected value is detected,
+then removes that value from the final answer by rewinding and regenerating.
 
 ## Performance Notes
 

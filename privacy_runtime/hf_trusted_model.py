@@ -38,6 +38,16 @@ class HFHardMaskTraceResult:
     steps: tuple[dict[str, Any], ...]
 
 
+@dataclass(frozen=True)
+class HFRewindGenerationResult:
+    text: str
+    protected_attribute_count: int
+    model_path: str
+    steps: tuple[dict[str, Any], ...]
+    rewind_events: tuple[dict[str, Any], ...]
+    fallback_used: bool
+
+
 @dataclass
 class HFTrustedModel:
     """Local HuggingFace trusted-model backend with decoder-time hard masks."""
@@ -45,6 +55,7 @@ class HFTrustedModel:
     model_path: str = DEFAULT_APERTUS_MODEL_PATH
     local_files_only: bool = True
     include_default_regexes: bool = True
+    fallback_text: str = "I cannot disclose protected personal information."
     device_map: str | Mapping[str, Any] | None = "auto"
     torch_dtype: str | None = "auto"
 
@@ -185,6 +196,152 @@ class HFTrustedModel:
             skip_special_tokens=True,
         ).strip()
 
+    def generate_with_rewind(
+        self,
+        *,
+        messages: list[dict[str, str]],
+        protected_attributes: Sequence[ProtectedAttributeInput] | None = None,
+        policy: PrivacyPolicy | None = None,
+        max_new_tokens: int = 256,
+        top_k: int = 5,
+        max_rewinds: int = 8,
+        trace: bool = False,
+        seed: int | None = None,
+    ) -> HFRewindGenerationResult:
+        if policy is None:
+            policy = privacy_policy_from_protected_attributes(
+                tuple(protected_attributes or ()),
+            )
+        if seed is not None:
+            self._manual_seed(seed)
+
+        try:
+            import torch
+        except ImportError as exc:
+            raise ImportError(
+                "generate_with_rewind requires torch. Install optional "
+                "dependencies with: pip install -r requirements-hf.txt"
+            ) from exc
+
+        prompt_text = render_chat_prompt(self.tokenizer, messages)
+        inputs = self.tokenizer(prompt_text, return_tensors="pt")
+        device = getattr(self.model, "device", None)
+        if device is not None and hasattr(inputs, "to"):
+            inputs = inputs.to(device)
+
+        prompt_ids = inputs["input_ids"]
+        generated_token_ids: list[int] = []
+        state_bans: dict[tuple[int, ...], set[int]] = {}
+        rewind_events: list[dict[str, Any]] = []
+        steps: list[dict[str, Any]] = []
+        eos_token_id = self.tokenizer.eos_token_id
+        fallback_used = False
+
+        self.model.eval()
+        with torch.no_grad():
+            step = 0
+            while step < max_new_tokens:
+                step += 1
+                input_ids = _append_generated_ids(
+                    prompt_ids,
+                    generated_token_ids,
+                    torch=torch,
+                )
+                outputs = self.model(input_ids=input_ids)
+                scores = outputs.logits[:, -1, :].clone()
+                state = tuple(generated_token_ids)
+                banned_ids = state_bans.get(state, set())
+                for token_id in banned_ids:
+                    scores[0, token_id] = -torch.inf
+
+                probs = torch.softmax(scores[0], dim=-1)
+                selected_token_id = int(torch.argmax(scores[0]).item())
+                selected_prob = float(probs[selected_token_id].item())
+                selected_token_text = self.vocabulary.token_text(selected_token_id)
+
+                if trace:
+                    steps.append(
+                        {
+                            "step": step,
+                            "generated_text_before": self._decode_generated(
+                                generated_token_ids,
+                                skip_special_tokens=True,
+                            ),
+                            "state_banned_token_ids": sorted(banned_ids),
+                            "top_after_state_bans": _top_token_records(
+                                self.vocabulary,
+                                probs,
+                                top_k=top_k,
+                            ),
+                            "selected_token": {
+                                "token_id": selected_token_id,
+                                "text": selected_token_text,
+                                "probability": selected_prob,
+                                "is_eos": selected_token_id == eos_token_id,
+                            },
+                        }
+                    )
+
+                if selected_token_id == eos_token_id:
+                    break
+
+                generated_token_ids.append(selected_token_id)
+                generated_text = self._decode_generated(
+                    generated_token_ids,
+                    skip_special_tokens=True,
+                )
+                leak = find_first_protected_value(
+                    generated_text,
+                    policy.all_forbidden_strings(),
+                )
+                if leak is None:
+                    continue
+
+                if len(rewind_events) >= max_rewinds:
+                    generated_token_ids = self.tokenizer.encode(
+                        self.fallback_text,
+                        add_special_tokens=False,
+                    )
+                    fallback_used = True
+                    break
+
+                rewind_index = rewind_token_index_for_char(
+                    self.tokenizer,
+                    generated_token_ids,
+                    leak["start"],
+                )
+                leaked_token_id = generated_token_ids[rewind_index]
+                rewind_state = tuple(generated_token_ids[:rewind_index])
+                state_bans.setdefault(rewind_state, set()).add(leaked_token_id)
+                rewind_text = self._decode_generated(
+                    list(rewind_state),
+                    skip_special_tokens=True,
+                )
+                rewind_events.append(
+                    {
+                        "matched_value": leak["value"],
+                        "text_before_rewind": generated_text,
+                        "rewind_to_text": rewind_text,
+                        "rewind_token_index": rewind_index,
+                        "banned_token_id": leaked_token_id,
+                        "banned_token_text": self.vocabulary.token_text(leaked_token_id),
+                    }
+                )
+                generated_token_ids = list(rewind_state)
+
+        final_text = self._decode_generated(
+            generated_token_ids,
+            skip_special_tokens=True,
+        ).strip()
+        return HFRewindGenerationResult(
+            text=final_text,
+            protected_attribute_count=len(policy.facts),
+            model_path=str(Path(self.model_path)),
+            steps=tuple(steps),
+            rewind_events=tuple(rewind_events),
+            fallback_used=fallback_used,
+        )
+
     def trace_hardmask_generation(
         self,
         *,
@@ -310,6 +467,18 @@ class HFTrustedModel:
         ).strip()
         return HFHardMaskTraceResult(text=text, steps=tuple(trace))
 
+    def _decode_generated(
+        self,
+        generated_token_ids: list[int],
+        *,
+        skip_special_tokens: bool,
+    ) -> str:
+        return self.tokenizer.decode(
+            generated_token_ids,
+            clean_up_tokenization_spaces=False,
+            skip_special_tokens=skip_special_tokens,
+        )
+
     @staticmethod
     def _manual_seed(seed: int) -> None:
         try:
@@ -367,3 +536,55 @@ def _top_token_records(
             }
         )
     return records
+
+
+def _append_generated_ids(
+    prompt_ids: Any,
+    generated_token_ids: list[int],
+    *,
+    torch: Any,
+) -> Any:
+    if not generated_token_ids:
+        return prompt_ids
+    next_tokens = torch.tensor(
+        [generated_token_ids],
+        dtype=prompt_ids.dtype,
+        device=prompt_ids.device,
+    )
+    return torch.cat([prompt_ids, next_tokens], dim=1)
+
+
+def find_first_protected_value(
+    text: str,
+    protected_values: tuple[str, ...],
+) -> dict[str, Any] | None:
+    lowered = text.casefold()
+    matches = []
+    for value in protected_values:
+        normalized = value.casefold()
+        if not normalized:
+            continue
+        index = lowered.find(normalized)
+        if index >= 0:
+            matches.append({"value": value, "start": index, "end": index + len(value)})
+    if not matches:
+        return None
+    return min(matches, key=lambda item: (int(item["start"]), -len(str(item["value"]))))
+
+
+def rewind_token_index_for_char(
+    tokenizer: Any,
+    generated_token_ids: list[int],
+    char_index: int,
+) -> int:
+    if not generated_token_ids:
+        return 0
+    for token_index in range(len(generated_token_ids)):
+        prefix_text = tokenizer.decode(
+            generated_token_ids[: token_index + 1],
+            clean_up_tokenization_spaces=False,
+            skip_special_tokens=True,
+        )
+        if len(prefix_text) > char_index:
+            return token_index
+    return max(0, len(generated_token_ids) - 1)

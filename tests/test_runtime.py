@@ -68,6 +68,18 @@ class PrivacyRuntimeTests(unittest.TestCase):
         self.assertIn(vocab.token_id("ios"), decision.blocked_token_ids)
         self.assertNotIn(vocab.token_id(" plan"), decision.blocked_token_ids)
 
+    def test_forbidden_string_constraint_does_not_block_partial_prefix(self) -> None:
+        vocab = SimpleVocabulary.from_tokens(["alice", "alice@example.com", " other"])
+        processor = PrivacyLogitProcessor(
+            vocabulary=vocab,
+            constraints=(ForbiddenStringConstraint(("alice@example.com",)),),
+        )
+
+        decision = processor.blocked_tokens("")
+
+        self.assertNotIn(vocab.token_id("alice"), decision.blocked_token_ids)
+        self.assertIn(vocab.token_id("alice@example.com"), decision.blocked_token_ids)
+
     def test_forbidden_string_constraint_uses_token_boundary(self) -> None:
         vocab = SimpleVocabulary.from_tokens(["M", "ment", "M."])
         processor = PrivacyLogitProcessor(

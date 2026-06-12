@@ -104,6 +104,9 @@ def main() -> None:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return
 
+    if args.do_sample:
+        raise ValueError("rewind hard-mask demo currently supports greedy decoding only")
+
     trusted_model = HFTrustedModel(
         model_path=args.model_path,
         local_files_only=not args.allow_download,
@@ -115,28 +118,19 @@ def main() -> None:
         top_p=args.top_p,
         do_sample=args.do_sample,
     )
-    result = trusted_model.generate(
+    result = trusted_model.generate_with_rewind(
         messages=messages,
         policy=policy,
         max_new_tokens=args.max_new_tokens,
-        temperature=args.temperature,
-        top_p=args.top_p,
-        do_sample=args.do_sample,
+        top_k=args.trace_top_k,
+        trace=args.trace_generation,
     )
-    trace_payload = None
-    if args.trace_generation:
-        if args.do_sample:
-            raise ValueError("--trace-generation currently supports greedy decoding only")
-        trace = trusted_model.trace_hardmask_generation(
-            messages=messages,
-            policy=policy,
-            max_new_tokens=args.max_new_tokens,
-            top_k=args.trace_top_k,
-        )
-        trace_payload = {
-            "hardmask_trace_reply": trace.text,
-            "steps": list(trace.steps),
-        }
+    trace_payload = {
+        "hardmask_trace_reply": result.text,
+        "steps": list(result.steps),
+        "rewind_events": list(result.rewind_events),
+        "fallback_used": result.fallback_used,
+    } if args.trace_generation or result.rewind_events else None
 
     payload = {
         "attacker_text": args.attacker_text,
@@ -157,11 +151,8 @@ def main() -> None:
         "mask_summary": {
             "model_path": result.model_path,
             "protected_attribute_count": result.protected_attribute_count,
-            "blocked_token_count_at_start": result.blocked_token_count,
-            "blocked_token_sample": [
-                {"token_id": token_id, "text": text, "reasons": list(reasons)}
-                for token_id, text, reasons in result.blocked_token_sample
-            ],
+            "rewind_event_count": len(result.rewind_events),
+            "fallback_used": result.fallback_used,
         },
         "protected_values_found_in_reply": protected_values_found(
             result.text,
