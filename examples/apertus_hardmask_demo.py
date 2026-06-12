@@ -38,6 +38,16 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional JSON file containing strings or structured protected attributes.",
     )
+    parser.add_argument(
+        "--source-text",
+        default=None,
+        help="Trusted source document text visible to the trusted model.",
+    )
+    parser.add_argument(
+        "--source-file",
+        default=None,
+        help="UTF-8 text file containing trusted source document text.",
+    )
     parser.add_argument("--attacker-text", required=True)
     parser.add_argument("--system-text", default="You are a helpful trusted assistant.")
     parser.add_argument("--max-new-tokens", type=int, default=256)
@@ -64,10 +74,12 @@ def main() -> None:
         protected_attributes.extend(_load_protected_json(args.protected_json))
 
     policy = privacy_policy_from_protected_attributes(protected_attributes)
-    messages = [
-        {"role": "system", "content": args.system_text},
-        {"role": "user", "content": args.attacker_text},
-    ]
+    source_text = load_source_text(args.source_text, args.source_file)
+    messages = build_trusted_messages(
+        system_text=args.system_text,
+        source_text=source_text,
+        attacker_text=args.attacker_text,
+    )
 
     if args.inspect_mask_only:
         payload = inspect_mask_only(
@@ -76,6 +88,7 @@ def main() -> None:
             local_files_only=not args.allow_download,
         )
         payload["attacker_text"] = args.attacker_text
+        payload.update(source_metadata(source_text, messages))
         payload["protected_values_found_in_reply"] = []
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return
@@ -96,6 +109,7 @@ def main() -> None:
     payload = {
         "attacker_text": args.attacker_text,
         "trusted_reply": result.text,
+        **source_metadata(source_text, messages),
         "mask_summary": {
             "model_path": result.model_path,
             "protected_attribute_count": result.protected_attribute_count,
@@ -111,6 +125,41 @@ def main() -> None:
         ),
     }
     print(json.dumps(payload, ensure_ascii=False, indent=2))
+
+
+def load_source_text(source_text: str | None, source_file: str | None) -> str:
+    chunks: list[str] = []
+    if source_text:
+        chunks.append(source_text.strip())
+    if source_file:
+        chunks.append(Path(source_file).read_text(encoding="utf-8").strip())
+    return "\n\n".join(chunk for chunk in chunks if chunk)
+
+
+def build_trusted_messages(
+    *,
+    system_text: str,
+    source_text: str,
+    attacker_text: str,
+) -> list[dict[str, str]]:
+    system_content = system_text
+    if source_text:
+        system_content = f"{system_content}\n\nSource document:\n{source_text}"
+    return [
+        {"role": "system", "content": system_content},
+        {"role": "user", "content": attacker_text},
+    ]
+
+
+def source_metadata(
+    source_text: str,
+    messages: list[dict[str, str]],
+) -> dict[str, object]:
+    return {
+        "source_provided": bool(source_text),
+        "source_length_chars": len(source_text),
+        "message_roles": [message["role"] for message in messages],
+    }
 
 
 def inspect_mask_only(
