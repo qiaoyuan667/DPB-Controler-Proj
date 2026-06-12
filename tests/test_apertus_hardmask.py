@@ -11,6 +11,8 @@ from unittest.mock import patch
 
 from privacy_runtime import (
     DEFAULT_APERTUS_MODEL_PATH,
+    ForbiddenStringConstraint,
+    HFPrivacyLogitsProcessor,
     HFTrustedModel,
     privacy_policy_from_protected_attributes,
 )
@@ -54,6 +56,16 @@ class FakeTensor:
 
     def __getitem__(self, index: int) -> "FakeRow":
         return FakeRow(self.rows[index])
+
+
+class FakeScores:
+    def __init__(self, rows: list[list[float]]):
+        self.rows = rows
+
+    def __setitem__(self, key: tuple[int, list[int]], value: float) -> None:
+        row_index, token_ids = key
+        for token_id in token_ids:
+            self.rows[row_index][token_id] = value
 
 
 class FakeRow:
@@ -143,6 +155,30 @@ class ApertusHardMaskTests(unittest.TestCase):
         self.assertEqual(result.protected_attribute_count, 1)
         self.assertGreaterEqual(result.blocked_token_count, 1)
         self.assertEqual(result.model_path, str(Path("models/fake")))
+
+    def test_hf_logits_processor_does_not_mask_prompt_tokens(self) -> None:
+        processor = HFPrivacyLogitsProcessor(
+            vocabulary=FakeVocabulary(),  # type: ignore[arg-type]
+            constraints=(ForbiddenStringConstraint(("Alice safe",)),),
+            prompt_length=1,
+        )
+        scores = FakeScores([[0.0, 0.0, 0.0]])
+
+        masked = processor(FakeTensor([[0]]), scores)
+
+        self.assertEqual(masked.rows[0][1], 0.0)
+
+    def test_hf_logits_processor_masks_generated_tokens_after_prompt(self) -> None:
+        processor = HFPrivacyLogitsProcessor(
+            vocabulary=FakeVocabulary(),  # type: ignore[arg-type]
+            constraints=(ForbiddenStringConstraint(("Alice safe",)),),
+            prompt_length=1,
+        )
+        scores = FakeScores([[0.0, 0.0, 0.0]])
+
+        masked = processor(FakeTensor([[2, 0]]), scores)
+
+        self.assertEqual(masked.rows[0][1], float("-inf"))
 
     def test_hf_trusted_model_can_generate_unmasked_baseline(self) -> None:
         fake_transformers = types.SimpleNamespace(

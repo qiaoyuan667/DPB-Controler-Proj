@@ -20,6 +20,7 @@ class HFPrivacyLogitsProcessor:
     vocabulary: HuggingFaceVocabulary
     constraints: tuple[TokenConstraint, ...]
     prompt_text: str = ""
+    prompt_length: int | None = None
 
     def __post_init__(self) -> None:
         self.processor = PrivacyLogitProcessor(
@@ -30,12 +31,17 @@ class HFPrivacyLogitsProcessor:
     def __call__(self, input_ids: Any, scores: Any) -> Any:
         for row_index in range(input_ids.shape[0]):
             token_ids = input_ids[row_index].tolist()
+            generated_ids = (
+                token_ids[self.prompt_length :]
+                if self.prompt_length is not None
+                else token_ids
+            )
             generated_text = self.vocabulary.tokenizer.decode(
-                token_ids,
+                generated_ids,
                 clean_up_tokenization_spaces=False,
                 skip_special_tokens=False,
             )
-            if self.prompt_text and generated_text.startswith(self.prompt_text):
+            if self.prompt_length is None and self.prompt_text and generated_text.startswith(self.prompt_text):
                 generated_text = generated_text[len(self.prompt_text) :]
 
             decision = self.processor.blocked_tokens(generated_text)

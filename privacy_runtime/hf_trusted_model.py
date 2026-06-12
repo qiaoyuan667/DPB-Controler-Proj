@@ -113,6 +113,7 @@ class HFTrustedModel:
             vocabulary=self.vocabulary,
             constraints=tuple(constraints),
             prompt_text=prompt_text,
+            prompt_length=inputs["input_ids"].shape[1],
         )
         logits_processor = LogitsProcessorList([privacy_processor])
         initial_decision = privacy_processor.processor.blocked_tokens("")
@@ -224,6 +225,7 @@ class HFTrustedModel:
             vocabulary=self.vocabulary,
             constraints=tuple(constraints),
             prompt_text=prompt_text,
+            prompt_length=inputs["input_ids"].shape[1],
         )
 
         input_ids = inputs["input_ids"]
@@ -256,13 +258,19 @@ class HFTrustedModel:
                     clean_up_tokenization_spaces=False,
                     skip_special_tokens=True,
                 )
+                generated_text_for_mask = self.tokenizer.decode(
+                    generated_token_ids,
+                    clean_up_tokenization_spaces=False,
+                    skip_special_tokens=False,
+                )
                 decision = privacy_processor.processor.blocked_tokens(
-                    generated_text_before
+                    generated_text_for_mask
                 )
                 trace.append(
                     {
                         "step": step,
                         "generated_text_before": generated_text_before,
+                        "generated_text_for_mask": generated_text_for_mask,
                         "raw_top": raw_top,
                         "masked_top": masked_top,
                         "raw_top_was_masked": raw_top_token_id

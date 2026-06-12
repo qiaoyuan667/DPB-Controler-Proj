@@ -125,6 +125,7 @@ def main() -> None:
                             vocabulary=vocabulary,
                             constraints=constraints,
                             prompt_text=prompt_text,
+                            prompt_length=inputs["input_ids"].shape[1],
                         )
                     ]
                 )

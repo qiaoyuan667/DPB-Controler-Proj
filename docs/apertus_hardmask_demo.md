@@ -57,7 +57,9 @@ python examples/apertus_hardmask_demo.py \
 
 The source document is placed in the system message. It is not automatically
 protected; only values passed through `--protected` or `--protected-json` are
-hard-masked.
+hard-masked. The hard-mask processor uses the prompt token length to inspect
+only newly generated assistant tokens, so protected values that appear in the
+source document do not count as already generated output.
 
 ## Output Fields
 

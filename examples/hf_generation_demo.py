@@ -71,6 +71,7 @@ def main() -> None:
             HFPrivacyLogitsProcessor(
                 vocabulary=vocabulary,
                 constraints=(ForbiddenStringConstraint(tuple(args.secret)),),
+                prompt_length=inputs["input_ids"].shape[1],
             )
         ]
     )
