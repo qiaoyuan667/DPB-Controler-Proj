@@ -143,6 +143,41 @@ class HFTrustedModel:
             ),
         )
 
+    def generate_unmasked(
+        self,
+        *,
+        messages: list[dict[str, str]],
+        max_new_tokens: int = 256,
+        temperature: float = 0.0,
+        top_p: float = 1.0,
+        do_sample: bool = False,
+        seed: int | None = None,
+    ) -> str:
+        prompt_text = render_chat_prompt(self.tokenizer, messages)
+        inputs = self.tokenizer(prompt_text, return_tensors="pt")
+        device = getattr(self.model, "device", None)
+        if device is not None and hasattr(inputs, "to"):
+            inputs = inputs.to(device)
+
+        generation_kwargs: dict[str, Any] = {
+            "max_new_tokens": max_new_tokens,
+            "do_sample": do_sample,
+            "pad_token_id": self.tokenizer.pad_token_id or self.tokenizer.eos_token_id,
+        }
+        if do_sample:
+            generation_kwargs["temperature"] = temperature
+            generation_kwargs["top_p"] = top_p
+        if seed is not None:
+            self._manual_seed(seed)
+
+        output_ids = self.model.generate(**inputs, **generation_kwargs)
+        generated_ids = output_ids[0][inputs["input_ids"].shape[1] :]
+        return self.tokenizer.decode(
+            generated_ids,
+            clean_up_tokenization_spaces=False,
+            skip_special_tokens=True,
+        ).strip()
+
     @staticmethod
     def _manual_seed(seed: int) -> None:
         try:

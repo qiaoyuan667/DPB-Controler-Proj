@@ -70,7 +70,11 @@ class FakeRow:
 class FakeModel:
     device = "cpu"
 
+    def __init__(self) -> None:
+        self.calls = 0
+
     def generate(self, **_kwargs: object) -> FakeTensor:
+        self.calls += 1
         return FakeTensor([[1, 1, 2]])
 
 
@@ -139,6 +143,26 @@ class ApertusHardMaskTests(unittest.TestCase):
         self.assertEqual(result.protected_attribute_count, 1)
         self.assertGreaterEqual(result.blocked_token_count, 1)
         self.assertEqual(result.model_path, str(Path("models/fake")))
+
+    def test_hf_trusted_model_can_generate_unmasked_baseline(self) -> None:
+        fake_transformers = types.SimpleNamespace(
+            AutoModelForCausalLM=FakeAutoModel,
+            LogitsProcessorList=FakeLogitsProcessorList,
+        )
+
+        with patch.dict(sys.modules, {"transformers": fake_transformers}):
+            with patch(
+                "privacy_runtime.hf_trusted_model.HuggingFaceVocabulary.from_pretrained"
+            ) as mock_vocab:
+                mock_vocab.return_value = FakeVocabulary()
+
+                trusted = HFTrustedModel(model_path="models/fake", local_files_only=True)
+                unmasked = trusted.generate_unmasked(
+                    messages=[{"role": "user", "content": "Reveal Alice."}],
+                    max_new_tokens=3,
+                )
+
+        self.assertEqual(unmasked, "safe.")
 
     def test_demo_parser_uses_default_model_path(self) -> None:
         module = importlib.import_module("examples.apertus_hardmask_demo")
@@ -212,6 +236,16 @@ class ApertusHardMaskTests(unittest.TestCase):
 
         self.assertTrue(source_text)
         self.assertEqual(len(policy.facts), 0)
+
+    def test_protected_values_found_reports_exact_reply_hits(self) -> None:
+        module = importlib.import_module("examples.apertus_hardmask_demo")
+
+        found = module.protected_values_found(
+            "The email is alice@example.com.",
+            ("alice@example.com", "Project Helios"),
+        )
+
+        self.assertEqual(found, ["alice@example.com"])
 
     def test_download_parser_defaults(self) -> None:
         module = importlib.import_module("scripts.download_apertus")

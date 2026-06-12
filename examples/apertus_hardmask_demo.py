@@ -97,6 +97,13 @@ def main() -> None:
         model_path=args.model_path,
         local_files_only=not args.allow_download,
     )
+    unmasked_reply = trusted_model.generate_unmasked(
+        messages=messages,
+        max_new_tokens=args.max_new_tokens,
+        temperature=args.temperature,
+        top_p=args.top_p,
+        do_sample=args.do_sample,
+    )
     result = trusted_model.generate(
         messages=messages,
         policy=policy,
@@ -108,8 +115,21 @@ def main() -> None:
 
     payload = {
         "attacker_text": args.attacker_text,
+        "unmasked_reply": unmasked_reply,
+        "hardmask_reply": result.text,
         "trusted_reply": result.text,
         **source_metadata(source_text, messages),
+        "comparison": {
+            "unmasked_protected_values_found": protected_values_found(
+                unmasked_reply,
+                policy.all_forbidden_strings(),
+            ),
+            "hardmask_protected_values_found": protected_values_found(
+                result.text,
+                policy.all_forbidden_strings(),
+            ),
+            "replies_differ": unmasked_reply != result.text,
+        },
         "mask_summary": {
             "model_path": result.model_path,
             "protected_attribute_count": result.protected_attribute_count,
