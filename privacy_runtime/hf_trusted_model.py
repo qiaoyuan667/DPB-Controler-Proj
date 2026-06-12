@@ -32,6 +32,12 @@ class HFTrustedGenerationResult:
     blocked_token_sample: tuple[tuple[int, str, tuple[str, ...]], ...]
 
 
+@dataclass(frozen=True)
+class HFHardMaskTraceResult:
+    text: str
+    steps: tuple[dict[str, Any], ...]
+
+
 @dataclass
 class HFTrustedModel:
     """Local HuggingFace trusted-model backend with decoder-time hard masks."""
@@ -178,6 +184,124 @@ class HFTrustedModel:
             skip_special_tokens=True,
         ).strip()
 
+    def trace_hardmask_generation(
+        self,
+        *,
+        messages: list[dict[str, str]],
+        protected_attributes: Sequence[ProtectedAttributeInput] | None = None,
+        policy: PrivacyPolicy | None = None,
+        max_new_tokens: int = 32,
+        top_k: int = 5,
+        seed: int | None = None,
+    ) -> HFHardMaskTraceResult:
+        if policy is None:
+            policy = privacy_policy_from_protected_attributes(
+                tuple(protected_attributes or ()),
+            )
+        if seed is not None:
+            self._manual_seed(seed)
+
+        try:
+            import torch
+        except ImportError as exc:
+            raise ImportError(
+                "trace_hardmask_generation requires torch. Install optional "
+                "dependencies with: pip install -r requirements-hf.txt"
+            ) from exc
+
+        prompt_text = render_chat_prompt(self.tokenizer, messages)
+        inputs = self.tokenizer(prompt_text, return_tensors="pt")
+        device = getattr(self.model, "device", None)
+        if device is not None and hasattr(inputs, "to"):
+            inputs = inputs.to(device)
+
+        constraints = [
+            ForbiddenStringConstraint(policy.all_forbidden_strings()),
+        ]
+        if self.include_default_regexes:
+            constraints.append(ForbiddenRegexConstraint(DEFAULT_PRIVATE_REGEXES))
+        privacy_processor = HFPrivacyLogitsProcessor(
+            vocabulary=self.vocabulary,
+            constraints=tuple(constraints),
+            prompt_text=prompt_text,
+        )
+
+        input_ids = inputs["input_ids"]
+        prompt_len = input_ids.shape[1]
+        generated_token_ids: list[int] = []
+        trace: list[dict[str, Any]] = []
+        eos_token_id = self.tokenizer.eos_token_id
+
+        self.model.eval()
+        with torch.no_grad():
+            for step in range(1, max_new_tokens + 1):
+                outputs = self.model(input_ids=input_ids)
+                raw_scores = outputs.logits[:, -1, :]
+                masked_scores = privacy_processor(input_ids, raw_scores.clone())
+
+                raw_probs = torch.softmax(raw_scores[0], dim=-1)
+                masked_probs = torch.softmax(masked_scores[0], dim=-1)
+                raw_top = _top_token_records(self.vocabulary, raw_probs, top_k=top_k)
+                masked_top = _top_token_records(
+                    self.vocabulary,
+                    masked_probs,
+                    top_k=top_k,
+                )
+                selected_token_id = int(torch.argmax(masked_scores[0]).item())
+                selected_prob = float(masked_probs[selected_token_id].item())
+                raw_top_token_id = raw_top[0]["token_id"] if raw_top else None
+
+                generated_text_before = self.tokenizer.decode(
+                    generated_token_ids,
+                    clean_up_tokenization_spaces=False,
+                    skip_special_tokens=True,
+                )
+                decision = privacy_processor.processor.blocked_tokens(
+                    generated_text_before
+                )
+                trace.append(
+                    {
+                        "step": step,
+                        "generated_text_before": generated_text_before,
+                        "raw_top": raw_top,
+                        "masked_top": masked_top,
+                        "raw_top_was_masked": raw_top_token_id
+                        in decision.blocked_token_ids
+                        if raw_top_token_id is not None
+                        else False,
+                        "selected_token": {
+                            "token_id": selected_token_id,
+                            "text": self.vocabulary.token_text(selected_token_id),
+                            "probability_after_mask": selected_prob,
+                            "is_eos": selected_token_id == eos_token_id,
+                        },
+                        "blocked_token_count": len(decision.blocked_token_ids),
+                        "blocked_top_reasons": list(
+                            decision.reasons.get(int(raw_top_token_id), ())
+                        )
+                        if raw_top_token_id is not None
+                        else [],
+                    }
+                )
+
+                if selected_token_id == eos_token_id:
+                    break
+
+                generated_token_ids.append(selected_token_id)
+                next_token = torch.tensor(
+                    [[selected_token_id]],
+                    dtype=input_ids.dtype,
+                    device=input_ids.device,
+                )
+                input_ids = torch.cat([input_ids, next_token], dim=1)
+
+        text = self.tokenizer.decode(
+            input_ids[0][prompt_len:],
+            clean_up_tokenization_spaces=False,
+            skip_special_tokens=True,
+        ).strip()
+        return HFHardMaskTraceResult(text=text, steps=tuple(trace))
+
     @staticmethod
     def _manual_seed(seed: int) -> None:
         try:
@@ -216,3 +340,22 @@ def _blocked_token_sample(
     for token_id in sorted(blocked_token_ids)[:limit]:
         out.append((token_id, vocabulary.token_text(token_id), reasons.get(token_id, ())))
     return tuple(out)
+
+
+def _top_token_records(
+    vocabulary: HuggingFaceVocabulary,
+    probs: Any,
+    *,
+    top_k: int,
+) -> list[dict[str, Any]]:
+    values, indices = probs.topk(max(1, top_k))
+    records = []
+    for value, token_id in zip(values.tolist(), indices.tolist(), strict=True):
+        records.append(
+            {
+                "token_id": int(token_id),
+                "text": vocabulary.token_text(int(token_id)),
+                "probability": float(value),
+            }
+        )
+    return records

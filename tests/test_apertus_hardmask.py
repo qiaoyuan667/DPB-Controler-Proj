@@ -197,6 +197,26 @@ class ApertusHardMaskTests(unittest.TestCase):
 
         self.assertEqual(args.source_text, "Alice's email is alice@example.com.")
 
+    def test_demo_parser_accepts_trace_options(self) -> None:
+        module = importlib.import_module("examples.apertus_hardmask_demo")
+
+        with patch.object(
+            sys,
+            "argv",
+            [
+                "apertus_hardmask_demo.py",
+                "--attacker-text",
+                "What is Alice's email?",
+                "--trace-generation",
+                "--trace-top-k",
+                "3",
+            ],
+        ):
+            args = module.parse_args()
+
+        self.assertTrue(args.trace_generation)
+        self.assertEqual(args.trace_top_k, 3)
+
     def test_build_trusted_messages_puts_source_in_system_message(self) -> None:
         module = importlib.import_module("examples.apertus_hardmask_demo")
 
@@ -246,6 +266,14 @@ class ApertusHardMaskTests(unittest.TestCase):
         )
 
         self.assertEqual(found, ["alice@example.com"])
+
+    def test_demo_payload_should_not_use_trusted_reply_alias(self) -> None:
+        payload = {
+            "unmasked_reply": "Alice's email is alice@example.com.",
+            "hardmask_reply": "",
+        }
+
+        self.assertNotIn("trusted_reply", payload)
 
     def test_download_parser_defaults(self) -> None:
         module = importlib.import_module("scripts.download_apertus")

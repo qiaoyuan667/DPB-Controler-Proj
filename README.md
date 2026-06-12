@@ -82,8 +82,8 @@ python examples/apertus_hardmask_demo.py `
 ```
 
 The demo prints both the unmasked baseline reply and the hard-mask reply for
-side-by-side inspection. See `docs/apertus_hardmask_demo.md` for parameters and
-output fields.
+side-by-side inspection. Add `--trace-generation` to inspect per-token hard-mask
+decoding. See `docs/apertus_hardmask_demo.md` for parameters and output fields.
 
 Use `--inspect-mask-only` after a tokenizer-only download to inspect blocked
 token ids without loading the full 8B model.

@@ -56,6 +56,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--do-sample", action="store_true")
     parser.add_argument("--allow-download", action="store_true")
     parser.add_argument(
+        "--trace-generation",
+        action="store_true",
+        help="Trace greedy hard-mask decoding step by step.",
+    )
+    parser.add_argument(
+        "--trace-top-k",
+        type=int,
+        default=5,
+        help="Number of raw/masked top tokens to show per traced step.",
+    )
+    parser.add_argument(
         "--inspect-mask-only",
         action="store_true",
         help="Load tokenizer only and inspect blocked token ids without model generation.",
@@ -112,12 +123,25 @@ def main() -> None:
         top_p=args.top_p,
         do_sample=args.do_sample,
     )
+    trace_payload = None
+    if args.trace_generation:
+        if args.do_sample:
+            raise ValueError("--trace-generation currently supports greedy decoding only")
+        trace = trusted_model.trace_hardmask_generation(
+            messages=messages,
+            policy=policy,
+            max_new_tokens=args.max_new_tokens,
+            top_k=args.trace_top_k,
+        )
+        trace_payload = {
+            "hardmask_trace_reply": trace.text,
+            "steps": list(trace.steps),
+        }
 
     payload = {
         "attacker_text": args.attacker_text,
         "unmasked_reply": unmasked_reply,
         "hardmask_reply": result.text,
-        "trusted_reply": result.text,
         **source_metadata(source_text, messages),
         "comparison": {
             "unmasked_protected_values_found": protected_values_found(
@@ -144,6 +168,8 @@ def main() -> None:
             policy.all_forbidden_strings(),
         ),
     }
+    if trace_payload is not None:
+        payload["hardmask_trace"] = trace_payload
     print(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
