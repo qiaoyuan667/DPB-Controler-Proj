@@ -79,6 +79,17 @@ def parse_args() -> argparse.Namespace:
         help="Directory for detailed trace JSON files.",
     )
     parser.add_argument(
+        "--rewind-strategy",
+        choices=("value", "dependency"),
+        default="value",
+        help="Rewind to the protected value start or a dependency-derived slot boundary.",
+    )
+    parser.add_argument(
+        "--dependency-model",
+        default="en_core_web_sm",
+        help="spaCy model used when --rewind-strategy dependency is selected.",
+    )
+    parser.add_argument(
         "--inspect-mask-only",
         action="store_true",
         help="Load tokenizer only and inspect blocked token ids without model generation.",
@@ -136,6 +147,8 @@ def main() -> None:
         policy=policy,
         max_new_tokens=args.max_new_tokens,
         top_k=args.trace_top_k,
+        rewind_strategy=args.rewind_strategy,
+        dependency_model=args.dependency_model,
         trace=args.trace_generation,
     )
     trace_payload = None
@@ -146,6 +159,7 @@ def main() -> None:
             model_path=result.model_path,
             protected_attribute_count=result.protected_attribute_count,
             hardmask_reply=result.text,
+            rewind_strategy=args.rewind_strategy,
             steps=list(result.steps),
             rewind_events=list(result.rewind_events),
             fallback_used=result.fallback_used,
@@ -174,6 +188,7 @@ def main() -> None:
         "mask_summary": {
             "model_path": result.model_path,
             "protected_attribute_count": result.protected_attribute_count,
+            "rewind_strategy": args.rewind_strategy,
             "rewind_event_count": len(result.rewind_events),
             "fallback_used": result.fallback_used,
         },
@@ -186,6 +201,7 @@ def main() -> None:
         payload["hardmask_trace"] = {
             "trace_id": trace_id,
             "trace_path": str(trace_path),
+            "rewind_strategy": args.rewind_strategy,
             "rewind_event_count": len(result.rewind_events),
         }
     print(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -243,6 +259,7 @@ def build_trace_payload(
     model_path: str,
     protected_attribute_count: int,
     hardmask_reply: str,
+    rewind_strategy: str,
     steps: list[dict[str, object]],
     rewind_events: list[dict[str, object]],
     fallback_used: bool,
@@ -254,6 +271,7 @@ def build_trace_payload(
         "model_path": model_path,
         "protected_attribute_count": protected_attribute_count,
         "hardmask_trace_reply": hardmask_reply,
+        "rewind_strategy": rewind_strategy,
         "steps": steps,
         "rewind_events": rewind_events,
         "fallback_used": fallback_used,

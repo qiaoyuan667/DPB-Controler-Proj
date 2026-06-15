@@ -8,6 +8,11 @@ from .constraints import (
     PrivacyLogitProcessor,
 )
 from .counterfactual import CounterfactualText, Replacement, build_counterfactual_text
+from .dependency_rewind import (
+    DependencyRewindDecision,
+    choose_dependency_rewind_start,
+    choose_dependency_rewind_start_from_doc,
+)
 from .guard import GuardDecision, PrivacyGuardV0
 from .hf import HFPrivacyLogitsProcessor
 from .hf_trusted_model import (
@@ -44,6 +49,7 @@ __all__ = [
     "DEFAULT_PRIVATE_REGEXES",
     "DEFAULT_APERTUS_MODEL_ID",
     "DEFAULT_APERTUS_MODEL_PATH",
+    "DependencyRewindDecision",
     "ForbiddenRegexConstraint",
     "ForbiddenStringConstraint",
     "GuardDecision",
@@ -73,6 +79,8 @@ __all__ = [
     "TokenVocabulary",
     "VerificationResult",
     "build_counterfactual_text",
+    "choose_dependency_rewind_start",
+    "choose_dependency_rewind_start_from_doc",
     "find_first_protected_value",
     "privacy_policy_from_protected_attributes",
     "render_chat_prompt",

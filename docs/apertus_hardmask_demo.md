@@ -33,6 +33,25 @@ python examples/apertus_hardmask_demo.py \
   --max-new-tokens 40
 ```
 
+Use dependency-role rewind instead of value-start rewind:
+
+```bash
+pip install -r requirements-parser.txt
+python -m spacy download en_core_web_sm
+
+python examples/apertus_hardmask_demo.py \
+  --protected-json test_data/protected.json \
+  --source-file test_data/source_document.txt \
+  --attacker-file test_data/attacker.txt \
+  --rewind-strategy dependency \
+  --max-new-tokens 80 \
+  --trace-generation
+```
+
+If spaCy or the configured dependency model is not installed, the demo does not
+crash. It falls back to a rule-based clause/value rewind and records that in the
+trace event.
+
 Run with a step-by-step greedy hard-mask trace:
 
 ```bash
@@ -70,6 +89,9 @@ python examples/apertus_hardmask_demo.py \
 - `--trace-generation`: Add a step-by-step greedy hard-mask decoding trace.
 - `--trace-top-k`: Number of raw/masked top tokens to show per traced step.
 - `--trace-output-dir`: Directory for detailed trace JSON files.
+- `--rewind-strategy`: `value` rewinds to the protected value start. `dependency`
+  rewinds to a dependency-derived slot, predicate, clause, apposition, or field line.
+- `--dependency-model`: spaCy model for dependency rewind. Default is `en_core_web_sm`.
 - `--inspect-mask-only`: Load tokenizer only and print blocked token ids without generation.
 
 The source document is placed in the system message. It is not automatically
@@ -86,6 +108,7 @@ source document do not count as already generated output.
 - `comparison.hardmask_protected_values_found`: Protected values found in the hard-mask reply.
 - `comparison.replies_differ`: Whether baseline and hard-mask replies differ.
 - `mask_summary.rewind_event_count`: Number of full protected-value leaks that triggered rewind.
+- `mask_summary.rewind_strategy`: Rewind strategy used by the hard-mask reply.
 - `mask_summary.fallback_used`: Whether repeated rewinds exhausted the retry budget.
 - `hardmask_trace.trace_id`: Trace file id when `--trace-generation` is set.
 - `hardmask_trace.trace_path`: JSON file containing detailed trace output.
@@ -94,10 +117,18 @@ source document do not count as already generated output.
 - `hardmask_trace.steps[].top_after_state_bans`: Top tokens after any rewind-state bans.
 - `hardmask_trace.steps[].selected_token`: Token selected at this step.
 - Trace file `rewind_events`: Full protected-value leaks and where generation rewound.
+- Trace file `rewind_events[].rewind_reason`: Why the rewind point was chosen, such
+  as `value_start`, `copula_slot_value`, `object_or_complement`, or `list_field`.
+- Trace file `rewind_events[].dependency_available`: Whether a dependency parser was
+  available for that decision.
 
 Unlike prefix blocking, this mode does not block partial prefixes such as
 `alice@example.`. It only reacts after a complete protected value is detected,
 then removes that value from the final answer by rewinding and regenerating.
+
+The dependency strategy is still decoder-time: it runs only after the generated
+assistant text contains a full protected value, then rewinds the live generation
+state and bans the first token of the leaking branch at that earlier state.
 
 ## Performance Notes
 

@@ -205,9 +205,13 @@ class HFTrustedModel:
         max_new_tokens: int = 256,
         top_k: int = 5,
         max_rewinds: int = 8,
+        rewind_strategy: str = "value",
+        dependency_model: str = "en_core_web_sm",
         trace: bool = False,
         seed: int | None = None,
     ) -> HFRewindGenerationResult:
+        if rewind_strategy not in {"value", "dependency"}:
+            raise ValueError("--rewind-strategy must be 'value' or 'dependency'")
         if policy is None:
             policy = privacy_policy_from_protected_attributes(
                 tuple(protected_attributes or ()),
@@ -305,10 +309,45 @@ class HFTrustedModel:
                     fallback_used = True
                     break
 
+                rewind_char_index = int(leak["start"])
+                decision_event: dict[str, Any] = {
+                    "rewind_strategy": rewind_strategy,
+                    "value_start": int(leak["start"]),
+                    "value_end": int(leak["end"]),
+                    "dependency_rewind_start": int(leak["start"]),
+                    "dependency_available": None,
+                    "fallback_strategy": None,
+                    "dependency_role": None,
+                    "governing_head": None,
+                    "governing_head_pos": None,
+                    "rewind_reason": "value_start",
+                }
+                if rewind_strategy == "dependency":
+                    from .dependency_rewind import choose_dependency_rewind_start
+
+                    decision = choose_dependency_rewind_start(
+                        generated_text,
+                        int(leak["start"]),
+                        int(leak["end"]),
+                        model_name=dependency_model,
+                    )
+                    rewind_char_index = decision.char_index
+                    decision_event.update(
+                        {
+                            "dependency_rewind_start": decision.char_index,
+                            "dependency_available": decision.dependency_available,
+                            "fallback_strategy": decision.fallback_strategy,
+                            "dependency_role": decision.dependency_role,
+                            "governing_head": decision.governing_head,
+                            "governing_head_pos": decision.governing_head_pos,
+                            "rewind_reason": decision.rewind_reason,
+                        }
+                    )
+
                 rewind_index = rewind_token_index_for_char(
                     self.tokenizer,
                     generated_token_ids,
-                    leak["start"],
+                    rewind_char_index,
                 )
                 leaked_token_id = generated_token_ids[rewind_index]
                 rewind_state = tuple(generated_token_ids[:rewind_index])
@@ -323,8 +362,10 @@ class HFTrustedModel:
                         "text_before_rewind": generated_text,
                         "rewind_to_text": rewind_text,
                         "rewind_token_index": rewind_index,
+                        "removed_text": generated_text[rewind_char_index:],
                         "banned_token_id": leaked_token_id,
                         "banned_token_text": self.vocabulary.token_text(leaked_token_id),
+                        **decision_event,
                     }
                 )
                 generated_token_ids = list(rewind_state)

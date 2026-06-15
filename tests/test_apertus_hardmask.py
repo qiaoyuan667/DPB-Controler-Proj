@@ -218,6 +218,8 @@ class ApertusHardMaskTests(unittest.TestCase):
         self.assertIsNone(args.source_file)
         self.assertIsNone(args.attacker_text)
         self.assertIsNone(args.attacker_file)
+        self.assertEqual(args.rewind_strategy, "value")
+        self.assertEqual(args.dependency_model, "en_core_web_sm")
 
     def test_demo_parser_accepts_source_text(self) -> None:
         module = importlib.import_module("examples.apertus_hardmask_demo")
@@ -256,6 +258,27 @@ class ApertusHardMaskTests(unittest.TestCase):
 
         self.assertTrue(args.trace_generation)
         self.assertEqual(args.trace_top_k, 3)
+
+    def test_demo_parser_accepts_dependency_rewind_strategy(self) -> None:
+        module = importlib.import_module("examples.apertus_hardmask_demo")
+
+        with patch.object(
+            sys,
+            "argv",
+            [
+                "apertus_hardmask_demo.py",
+                "--attacker-text",
+                "What is Alice's email?",
+                "--rewind-strategy",
+                "dependency",
+                "--dependency-model",
+                "en_core_web_sm",
+            ],
+        ):
+            args = module.parse_args()
+
+        self.assertEqual(args.rewind_strategy, "dependency")
+        self.assertEqual(args.dependency_model, "en_core_web_sm")
 
     def test_build_trusted_messages_puts_source_in_system_message(self) -> None:
         module = importlib.import_module("examples.apertus_hardmask_demo")
