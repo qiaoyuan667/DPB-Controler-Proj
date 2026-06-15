@@ -191,6 +191,7 @@ def generate_synthetic_records(
     policies_per_doc: int = 4,
     seed: int = 42,
     target_schema: str = "value",
+    synthetic_mode: str = "full_allowed",
 ) -> list[dict[str, Any]]:
     if num_base_docs <= 0:
         raise ValueError("num_base_docs must be positive")
@@ -209,6 +210,7 @@ def generate_synthetic_records(
                     policy_index,
                     categories,
                     target_schema=target_schema,
+                    synthetic_mode=synthetic_mode,
                 )
             )
     return records
@@ -281,18 +283,22 @@ def build_counterfactual_record(
     protected_categories: Iterable[str],
     *,
     target_schema: str = "value",
+    synthetic_mode: str = "full_allowed",
 ) -> dict[str, Any]:
     protected_category_set = set(protected_categories)
     if target_schema not in {"value", "key_value"}:
         raise ValueError(f"unknown target_schema: {target_schema}")
+    if synthetic_mode not in {"full_allowed", "protected_only", "sparse_allowed"}:
+        raise ValueError(f"unknown synthetic_mode: {synthetic_mode}")
     protected_items = [
         value for value in base_doc.values if value.category in protected_category_set
     ]
-    allowed_items = [
-        value
-        for value in base_doc.values
-        if value.allowed and value.category not in protected_category_set
-    ]
+    allowed_items = select_allowed_items(
+        base_doc.values,
+        protected_category_set,
+        policy_index=policy_index,
+        synthetic_mode=synthetic_mode,
+    )
     protected_values = _unique_keep_order(value.value for value in protected_items)
     allowed_values = _unique_keep_order(value.value for value in allowed_items)
     values_by_category = {value.category: value.value for value in base_doc.values}
@@ -306,11 +312,16 @@ def build_counterfactual_record(
             "base_doc_id": base_doc.base_doc_id,
             "source_format": base_doc.source_format,
             "protected_categories": sorted(protected_category_set),
+            "synthetic_mode": synthetic_mode,
         },
         "generated_texts": {
             "source_document_text": base_doc.source_document,
             "privacy_policy_text": render_privacy_policy(sorted(protected_category_set)),
-            "task_instruction_text": base_doc.task_instruction,
+            "task_instruction_text": (
+                render_protected_only_task_instruction(base_doc.source_format)
+                if synthetic_mode == "protected_only"
+                else base_doc.task_instruction
+            ),
         },
         "hidden_target": {
             "allowed_fields": [value.category for value in allowed_items],
@@ -336,6 +347,7 @@ def build_counterfactual_record(
             "base_doc_id": base_doc.base_doc_id,
             "source_format": base_doc.source_format,
             "protected_categories": sorted(protected_category_set),
+            "synthetic_mode": synthetic_mode,
             "synthetic_values": [
                 {"category": value.category, "value": value.value}
                 for value in base_doc.values
@@ -395,6 +407,7 @@ def summarize_synthetic_splits(
     polar_dir: str | None = None,
     polar_splits: Mapping[str, int] | None = None,
     target_schema: str = "value",
+    synthetic_mode: str = "full_allowed",
 ) -> dict[str, Any]:
     synthetic_records = [record for split in splits.values() for record in split]
     protected_counter: Counter[str] = Counter()
@@ -413,6 +426,7 @@ def summarize_synthetic_splits(
         "val_ratio": val_ratio,
         "mixed_with_polar": mixed_with_polar,
         "target_schema": target_schema,
+        "synthetic_mode": synthetic_mode,
         "polar_dir": polar_dir,
         "polar_splits": dict(polar_splits or {}),
         "synthetic_records": len(synthetic_records),
@@ -460,6 +474,15 @@ def render_task_instruction(format_name: str) -> str:
     if format_name == "travel_note":
         return "Prepare a travel support summary using only policy-permitted details."
     return "Prepare a concise operational summary using only policy-permitted details."
+
+
+def render_protected_only_task_instruction(format_name: str) -> str:
+    return (
+        "Identify only the concrete values that must not be disclosed under the "
+        "privacy policy. Set allowed_values to an empty list. Every output value "
+        "must appear exactly in the source document. Do not infer, guess, normalize, "
+        "or invent values."
+    )
 
 
 def render_source_document(format_name: str, profile: Mapping[str, str]) -> str:
@@ -619,6 +642,38 @@ def _unique_keep_order(values: Iterable[str]) -> list[str]:
             seen.add(key)
             out.append(value)
     return out
+
+
+def select_allowed_items(
+    values: Iterable[SyntheticValue],
+    protected_category_set: set[str],
+    *,
+    policy_index: int,
+    synthetic_mode: str,
+) -> list[SyntheticValue]:
+    values = [value for value in values if value.allowed and value.category not in protected_category_set]
+    if synthetic_mode == "full_allowed":
+        return values
+    if synthetic_mode == "protected_only":
+        return []
+    if synthetic_mode == "sparse_allowed":
+        task_relevant_categories = _SPARSE_ALLOWED_CATEGORY_SETS[
+            policy_index % len(_SPARSE_ALLOWED_CATEGORY_SETS)
+        ]
+        return [
+            value
+            for value in values
+            if value.category in task_relevant_categories
+        ][:3]
+    raise ValueError(f"unknown synthetic_mode: {synthetic_mode}")
+
+
+_SPARSE_ALLOWED_CATEGORY_SETS = (
+    ("project", "job_title", "course"),
+    ("degree", "research_topic", "city"),
+    ("project", "course", "city"),
+    ("job_title", "degree", "research_topic"),
+)
 
 
 def _target_values(values: Iterable[SyntheticValue], *, target_schema: str) -> list[Any]:

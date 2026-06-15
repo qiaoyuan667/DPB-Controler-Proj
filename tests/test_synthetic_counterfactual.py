@@ -109,6 +109,29 @@ class SyntheticCounterfactualTests(unittest.TestCase):
         self.assertEqual(record["target_schema"], "key_value")
         self.assertIn('"key":"name"', record["target_text"])
 
+    def test_protected_only_mode_leaves_hard_negatives_out_of_target(self) -> None:
+        record = generate_synthetic_records(
+            num_base_docs=1,
+            policies_per_doc=1,
+            seed=7,
+            target_schema="key_value",
+            synthetic_mode="protected_only",
+        )[0]
+        values_by_category = {
+            item["category"]: item["value"] for item in record["synthetic_values"]
+        }
+        allowed_entries = record["target"]["scoring_targets"]["allowed_values"]
+        protected_entries = record["target"]["scoring_targets"]["do_not_disclose_values"]
+        protected_values = {entry["value"] for entry in protected_entries}
+
+        self.assertEqual(allowed_entries, [])
+        self.assertEqual(record["synthetic_mode"], "protected_only")
+        self.assertIn(values_by_category["home_address"], record["input"])
+        self.assertIn(values_by_category["grade"], record["input"])
+        self.assertNotIn(values_by_category["home_address"], protected_values)
+        self.assertNotIn(values_by_category["grade"], protected_values)
+        self.assertIn("Set allowed_values to an empty list", record["input"])
+
 
 if __name__ == "__main__":
     unittest.main()

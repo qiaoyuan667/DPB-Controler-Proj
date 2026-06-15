@@ -43,6 +43,16 @@ def parse_args() -> argparse.Namespace:
         default="value",
         help="Use value-only targets or list-of-{key,value} targets.",
     )
+    parser.add_argument(
+        "--synthetic-mode",
+        choices=["full_allowed", "protected_only", "sparse_allowed"],
+        default="full_allowed",
+        help=(
+            "Synthetic target style. full_allowed keeps v1 behavior; "
+            "protected_only sets allowed_values to []; sparse_allowed keeps only "
+            "a few task-relevant allowed values."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -58,6 +68,7 @@ def main() -> None:
         policies_per_doc=args.policies_per_doc,
         seed=args.seed,
         target_schema=args.target_schema,
+        synthetic_mode=args.synthetic_mode,
     )
     synthetic_splits = split_records_by_base_doc(
         synthetic_records,
@@ -101,6 +112,7 @@ def main() -> None:
         polar_dir=str(polar_dir) if polar_dir else None,
         polar_splits=polar_splits,
         target_schema=args.target_schema,
+        synthetic_mode=args.synthetic_mode,
     )
     metadata["synthetic_splits"] = metadata.pop("splits")
     metadata["splits"] = {split: len(records) for split, records in output_splits.items()}
