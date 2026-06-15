@@ -1,0 +1,196 @@
+\section{Decoder-Time Hard Masking for Trusted-Model Privacy}
+\label{sec:hard-mask}
+
+We implement a decoder-time hard-masking path for the trusted local model.  The
+setting is a two-party agent interaction: an external or attacker model provides
+an adversarial user message, while the trusted model receives both this message
+and a private source document.  The source document is placed in the trusted
+model's system context, whereas the attacker text is placed in the user message.
+Protected attributes are supplied explicitly as a list of values or structured
+records, rather than being inferred from the benchmark labels.  This separation
+is important for future POLAR-style evaluation: the defense should operate on a
+policy supplied to the trusted runtime, while gold protected values are reserved
+for debugging and scoring.
+
+\paragraph{Local trusted-model path.}
+The current implementation uses a local Hugging Face model, with
+\texttt{swiss-ai/Apertus-8B-Instruct-2509} as the default model identifier and
+\texttt{models/apertus-8b-instruct-2509} as the default local path.  Local
+execution is necessary because true decoder-time hard masking requires access to
+the next-token logits.  Hosted chat APIs that do not expose logits can support
+post-hoc checking or rewriting, but they cannot implement the same hard
+generation-time constraint.
+
+\paragraph{Exact token-level masking.}
+The first masking mechanism follows the constrained-decoding view of privacy
+defense: before a token is selected, the runtime checks whether appending each
+candidate vocabulary token would complete a protected string or match a private
+regex pattern, and sets the corresponding logit to $-\infty$ if so.  Let
+$y_{<t}$ be the generated assistant prefix, $v$ a candidate token, and
+$\tau(v)$ its decoded text.  For each protected surface form
+$\gamma \in \Gamma(A_{\mathrm{protected}})$, the runtime blocks $v$ whenever
+$y_{<t}\tau(v)$ would complete $\gamma$.  This is implemented by
+\texttt{HFPrivacyLogitsProcessor}, which only inspects tokens generated after
+the prompt boundary, so protected values that appear in the private source
+document do not count as already generated assistant output.
+
+This mechanism is closest to constrained decoding for privacy-preserving LLM
+inference, where logits are masked to prevent structured PII from being emitted
+\cite{constrained_decoding_privacy_llm}.  Our implementation differs in that the
+blocked strings are policy-supplied protected attributes and surface forms, not
+only fixed regex categories such as emails or phone numbers.  The same module
+can still include regex constraints for common private formats.
+
+\paragraph{Why prefix blocking was not enough.}
+Early experiments showed that aggressive prefix blocking can over-mask benign
+tokens.  For example, if the protected value is \texttt{\$2M}, shell quoting
+mistakes may reduce it to \texttt{M}; a prefix-aware mask then blocks many
+ordinary tokens containing \texttt{m}.  Even when the value is quoted correctly,
+blocking partial prefixes such as \texttt{alice@example.} can make generation
+unnatural and can force the model to terminate early.  For this reason, the
+current demo does not rely on partial-prefix blocking.  It allows the model to
+temporarily generate a protected value internally, detects the full leakage in
+the assistant text, rewinds the live generation state, and regenerates from an
+earlier state.
+
+\paragraph{Rewind-on-leak masking.}
+The main hard-mask mode is \emph{rewind-on-leak}.  Generation proceeds greedily
+one token at a time.  After each selected token, the runtime decodes only the
+assistant-generated tokens and checks whether any full protected value appears
+case-insensitively.  If no protected value is present, generation continues.  If
+a full protected value appears, the runtime finds a rewind point, removes all
+generated tokens after that point, records the token that opened the leaking
+branch, bans that token at the rewind state, and continues decoding.  State bans
+are stored as
+\[
+    \mathcal{B}: \mathrm{tuple}(y_{1:k}) \mapsto \{v_1,\ldots,v_m\},
+\]
+so a token is banned only at the specific generation state that previously led
+to leakage.  This keeps the intervention local: a token such as
+\texttt{Alice}, \texttt{al}, or a comma may be banned at one state while
+remaining available elsewhere.
+
+The default rewind strategy is \texttt{value}.  If a protected value starts at
+character position $i$ in the decoded assistant text, the runtime estimates the
+first token whose decoded prefix crosses $i$, rewinds to the token before that
+point, and bans the leaking token at that state.  This strategy is simple and
+strong for exact-value leakage, but it can be too late when the model has
+already opened a syntactic slot such as \texttt{His email is \_} or
+\texttt{The patient, \_}.  In those cases, regenerating from immediately before
+the value often causes the model to refill the same private slot.
+
+\paragraph{Dependency-role rewind.}
+To address slot-refilling failures, we add an optional
+\texttt{dependency} rewind strategy.  The dependency parser is invoked only
+after a complete protected value has already appeared in the generated assistant
+text, so it does not run at every token step.  If spaCy or the configured model
+is unavailable, the runtime falls back to rule-based line, clause, or value
+rewind and records the fallback in the trace.
+
+The dependency strategy chooses an earlier rewind point according to the role of
+the protected span:
+\begin{itemize}
+    \item \textbf{Field or markdown line.}  If the protected value appears in a
+    line such as \texttt{Email: x}, \texttt{Phone: x}, or
+    \texttt{Patient: x}, the runtime rewinds to the beginning of that line.
+    This rule is applied before dependency parsing because parser analyses of
+    markdown lists are often unstable.
+    \item \textbf{Subject-like value.}  If the protected value is a subject
+    (\texttt{nsubj}, \texttt{nsubjpass}, or \texttt{csubj}), the runtime rewinds
+    to the current sentence or clause start.
+    \item \textbf{Copular slot value.}  If the value is an attribute or
+    complement in a copular construction, such as \texttt{His email is
+    121@gmail.com}, the runtime rewinds to the slot subject start rather than to
+    the email itself.  This removes the whole slot expression
+    \texttt{His email is ...}, making it less likely that the model immediately
+    fills the same private slot again.
+    \item \textbf{Object or complement.}  If the value is an object or clausal
+    complement, the runtime rewinds to the governing predicate.  For example,
+    \texttt{The note includes H-133326} rewinds to \texttt{includes}.
+    \item \textbf{Prepositional object.}  If the protected value is the object
+    of a preposition, such as \texttt{Contact him at +41...}, the runtime
+    rewinds to the governing predicate rather than only to the preposition.
+    \item \textbf{Apposition.}  If the model generates an appositive disclosure,
+    such as \texttt{The patient, Lina Roth}, the runtime rewinds to the
+    punctuation that opened the apposition.  The next regeneration then bans the
+    comma at the state \texttt{The patient}, discouraging the model from
+    re-opening the same name slot.
+    \item \textbf{Unknown role.}  If no reliable role is found, the runtime
+    falls back to a clause start and then to the protected value start.
+\end{itemize}
+
+This dependency-role design is not a general semantic privacy guarantee.  It is
+a decoder-time repair heuristic that tries to rewind to the structure that made
+the protected value likely, rather than merely deleting the value itself.  It is
+most useful for common disclosure templates in privacy benchmarks: field lists,
+copular slots, appositions, and contact-information predicates.
+
+\paragraph{Traceability and failure modes.}
+The demo emits both the unmasked baseline and the hard-masked response.  When
+tracing is enabled, detailed events are written to a separate JSON file.  Each
+rewind event records the matched protected value, the text before rewind, the
+rewind target text, the token banned at that state, and dependency metadata such
+as the dependency role, governing head, parser availability, fallback strategy,
+and removed text.  This makes failures inspectable.  For example, if a protected
+name is repeatedly produced as \texttt{- Patient's name: ...},
+\texttt{* Patient's name: ...}, and \texttt{1. Patient's name: ...}, the trace
+reveals that the model is changing list markers rather than abandoning the
+privacy-disclosing field.  The runtime can then be improved with structural
+bans, list-context priority, or repeated-leak escalation.
+
+The current method has three important limitations.  First, it prevents exact
+protected values from appearing in the final decoded output, but it does not by
+itself prevent semantic leakage, such as paraphrases or quasi-identifiers.
+Second, if the model repeatedly attempts to disclose the same value through
+different formats, the decoder may consume many rewind attempts before producing
+a useful answer.  Third, dependency parsing can choose an overly broad rewind
+point in long sentences, for example mapping a leaked list item back to a remote
+verb such as \texttt{share} instead of the local phrase \texttt{which includes}.
+For these cases, the next improvements are list/colon boundary priority,
+maximum rewind-distance caps, repeated-leak escalation, and attribute-type-aware
+slot rules.
+
+\paragraph{Relation to prior work.}
+The hard-mask component is most directly related to constrained decoding for
+privacy-preserving inference, which argues for inference-time prevention rather
+than post-hoc filtering once PII has already been generated
+\cite{constrained_decoding_privacy_llm}.  It is also related to generation-time
+secret-leakage defenses such as PRISM, which monitor and intervene during
+generation in multi-agent pipelines \cite{prism_secret_leakage}.  Our runtime
+adopts the same broad principle that leakage should be stopped during decoding,
+but focuses on policy-supplied protected attributes and trusted-context
+disclosure rather than only credentials or structured secrets.
+
+At the system level, the design is complementary to contextual-integrity and
+agent privacy systems such as PrivacyChecker, AirGapAgent, and PlanTwin
+\cite{privacychecker,airgapagent,plantwin}.  Those systems emphasize deciding
+what information flows are appropriate, minimizing access to private data, or
+using local abstractions and budgets for cloud-assisted planning.  Our hard mask
+is a lower-level enforcement mechanism: once a trusted model has private
+context, the decoder prevents explicit protected values from crossing the
+communication boundary.  Benchmarks such as ConfAIde and POLAR motivate this
+setting because they show that privacy depends on context, task utility, and
+adversarial probing rather than on static PII detection alone
+\cite{confaide,polar_bench}.
+
+% Suggested BibTeX keys used above:
+% - constrained_decoding_privacy_llm:
+%   Constrained Decoding for Privacy-Preserving LLM Inference,
+%   OpenReview riu8VN6Do8.
+% - prism_secret_leakage:
+%   PRISM, generation-time mitigation of secret leakage in multi-agent LLM
+%   pipelines, arXiv:2605.10614.
+% - privacychecker:
+%   PrivacyChecker / Privacy in Action, contextual-integrity checks for
+%   LLM-powered agents, arXiv:2509.17488.
+% - airgapagent:
+%   AirGapAgent, privacy-conscious conversational agents and contextual
+%   integrity, arXiv:2405.05175.
+% - plantwin:
+%   PlanTwin, privacy-preserving cloud-assisted LLM agents, arXiv:2603.18377.
+% - confaide:
+%   ConfAIde, contextual-integrity benchmark for LLM privacy,
+%   arXiv:2310.17884.
+% - polar_bench:
+%   POLAR-Bench, diagnostic benchmark for privacy-utility trade-offs in LLM
+%   agents.
