@@ -36,17 +36,9 @@ Rules:
 - The privacy policy is authoritative and must be followed exactly.
 - Put a value in do_not_disclose_values only when the privacy policy explicitly
   forbids disclosing that concrete value or category of value.
-- Do not broaden the policy based on what seems sensitive. Universities,
-  institutions, employers, project names, public professional affiliations,
-  cities, and countries are not protected by default unless the policy
-  explicitly forbids them.
-- If the policy protects home addresses, do not treat school addresses,
-  institutional addresses, employer addresses, or work locations as home
-  addresses.
+- Do not broaden the policy based on what seems sensitive.
 - If a policy allows only an abstraction, put the exact private value in
   do_not_disclose_values, not in allowed_values.
-- If it is unclear whether the policy forbids disclosing a value, do not put
-  that value in do_not_disclose_values.
 - Do not include explanations, markdown, comments, or chain-of-thought."""
 
 
