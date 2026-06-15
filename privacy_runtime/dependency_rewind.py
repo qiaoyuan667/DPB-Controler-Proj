@@ -89,8 +89,8 @@ def choose_dependency_rewind_start_from_doc(
 
     if role in APPOSITION_DEPS:
         return _decision_for_token(
-            char_index=_subtree_start(token),
-            reason="apposition",
+            char_index=_apposition_structure_start(text, token, leak_start),
+            reason="apposition_structure",
             token=token,
         )
 
@@ -279,6 +279,17 @@ def _slot_subject_start(token: Any) -> int | None:
         if str(getattr(child, "dep_", "") or "") in SUBJECT_DEPS:
             return _subtree_start(child)
     return None
+
+
+def _apposition_structure_start(text: str, token: Any, leak_start: int) -> int:
+    comma_index = text.rfind(",", 0, leak_start)
+    if comma_index >= 0 and not text[comma_index + 1 : leak_start].strip():
+        return comma_index
+
+    head = getattr(token, "head", token)
+    if head is not token:
+        return _subtree_start(head)
+    return _subtree_start(token)
 
 
 def _governing_predicate(token: Any) -> Any:

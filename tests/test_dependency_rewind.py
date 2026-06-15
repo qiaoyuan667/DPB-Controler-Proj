@@ -148,7 +148,7 @@ class DependencyRewindTests(unittest.TestCase):
         self.assertEqual(decision.rewind_reason, "prepositional_object")
         self.assertEqual(decision.char_index, 0)
 
-    def test_apposition_rewinds_to_appositive_span_start(self) -> None:
+    def test_apposition_rewinds_to_comma_before_appositive(self) -> None:
         text = "The patient, Noah Baumann, reports pain."
         patient = FakeToken("patient", text.index("patient"), "nsubj", "NOUN")
         noah = FakeToken("Noah", text.index("Noah"), "appos", "PROPN").set_head(
@@ -164,8 +164,8 @@ class DependencyRewindTests(unittest.TestCase):
             doc,
         )
 
-        self.assertEqual(decision.rewind_reason, "apposition")
-        self.assertEqual(decision.char_index, text.index("Noah"))
+        self.assertEqual(decision.rewind_reason, "apposition_structure")
+        self.assertEqual(decision.char_index, text.index(","))
 
     def test_parser_unavailable_falls_back_to_clause_or_value(self) -> None:
         text = "The patient is stable, and email is noah@example.com"

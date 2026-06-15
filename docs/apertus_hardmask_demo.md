@@ -90,7 +90,8 @@ python examples/apertus_hardmask_demo.py \
 - `--trace-top-k`: Number of raw/masked top tokens to show per traced step.
 - `--trace-output-dir`: Directory for detailed trace JSON files.
 - `--rewind-strategy`: `value` rewinds to the protected value start. `dependency`
-  rewinds to a dependency-derived slot, predicate, clause, apposition, or field line.
+  rewinds to a dependency-derived slot, predicate, clause, field line, or the
+  punctuation that opened an apposition.
 - `--dependency-model`: spaCy model for dependency rewind. Default is `en_core_web_sm`.
 - `--inspect-mask-only`: Load tokenizer only and print blocked token ids without generation.
 
