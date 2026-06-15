@@ -1,0 +1,60 @@
+{
+  "base_doc_splits": {
+    "test": 38,
+    "train": 175,
+    "val": 37
+  },
+  "dataset": "synthetic_counterfactual_v1",
+  "domain": "synthetic_counterfactual",
+  "format_distribution": {
+    "application_form": 100,
+    "bullet_list": 100,
+    "chat_log": 100,
+    "email": 100,
+    "legal_intake": 100,
+    "medical_note": 100,
+    "paragraph": 100,
+    "recruitment_note": 100,
+    "support_ticket": 100,
+    "table_note": 100
+  },
+  "mixed_with_polar": false,
+  "num_base_docs": 250,
+  "polar_dir": null,
+  "polar_splits": {},
+  "policies_per_doc": 4,
+  "protected_category_distribution": {
+    "account_id": 200,
+    "date_of_birth": 200,
+    "email": 300,
+    "employer": 100,
+    "grade": 100,
+    "home_address": 200,
+    "medical_condition": 100,
+    "name": 200,
+    "phone": 300,
+    "salary": 200,
+    "school": 200,
+    "travel_booking": 100
+  },
+  "seed": 42,
+  "splits": {
+    "test": 152,
+    "train": 700,
+    "val": 148
+  },
+  "synthetic_records": 1000,
+  "synthetic_splits": {
+    "test": 152,
+    "train": 700,
+    "val": 148
+  },
+  "target_schema": {
+    "scoring_targets": {
+      "allowed_values": "list[str]",
+      "do_not_disclose_values": "list[str]"
+    }
+  },
+  "train_ratio": 0.7,
+  "val_ratio": 0.15
+}
