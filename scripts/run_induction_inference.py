@@ -32,7 +32,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-new-tokens", type=int, default=512)
     parser.add_argument(
         "--target-schema",
-        choices=["value", "key_value"],
+        choices=["value", "key_value", "protected_key_value"],
         default="value",
         help="Expected output schema for the system prompt.",
     )

@@ -65,6 +65,32 @@ Rules:
   do_not_disclose_values, not in allowed_values.
 - Do not include explanations, markdown, comments, or chain-of-thought."""
 
+PROTECTED_KEY_VALUE_SYSTEM_PROMPT = """You are a local privacy policy inducer for runtime privacy control.
+
+Your job is to read the source document, the privacy policy, and the task
+instruction, then output only the protected field keys and concrete values that
+must not be disclosed.
+
+Output only valid JSON with this exact shape:
+{"policy_targets":{"protected_values":[{"key":"","value":""}]}}
+
+Definitions:
+- protected_values: key-value entries from the source document that the privacy
+  policy forbids disclosing. These are the values the runtime must protect.
+
+Rules:
+- Do not output allowed_values.
+- Each list item must be an object with exactly a field key and the concrete
+  source-document value: {"key":"field_name","value":"exact concrete value"}.
+- Use the most specific field key implied by the policy and document, such as
+  "name", "email", "phone", "home_address", "school", "grade", or "employer".
+- Output concrete values, not field names alone. For example, output
+  {"key":"name","value":"Noah Baumann"}, not {"key":"name","value":"name"}.
+- Use values as they appear in the source document when possible.
+- Every output value must appear in the source document. Do not infer, guess,
+  normalize, or invent values.
+- Do not include explanations, markdown, comments, or chain-of-thought."""
+
 SYSTEM_PROMPT = VALUE_SYSTEM_PROMPT
 
 
@@ -73,6 +99,8 @@ def get_system_prompt(target_schema: str = "value") -> str:
         return VALUE_SYSTEM_PROMPT
     if target_schema == "key_value":
         return KEY_VALUE_SYSTEM_PROMPT
+    if target_schema == "protected_key_value":
+        return PROTECTED_KEY_VALUE_SYSTEM_PROMPT
     raise ValueError(f"unknown target_schema: {target_schema}")
 
 
@@ -181,6 +209,15 @@ def build_key_value_scoring_target(sample: Mapping[str, Any]) -> dict[str, dict[
     }
 
 
+def build_protected_key_value_target(sample: Mapping[str, Any]) -> dict[str, dict[str, list[dict[str, str]]]]:
+    key_value_target = build_key_value_scoring_target(sample)
+    return {
+        "policy_targets": {
+            "protected_values": key_value_target["scoring_targets"]["do_not_disclose_values"],
+        }
+    }
+
+
 def validate_scoring_target(value: Any) -> tuple[bool, str]:
     if not isinstance(value, Mapping):
         return False, "prediction is not a JSON object"
@@ -216,6 +253,25 @@ def validate_key_value_scoring_target(value: Any) -> tuple[bool, str]:
     return True, ""
 
 
+def validate_protected_key_value_target(value: Any) -> tuple[bool, str]:
+    if not isinstance(value, Mapping):
+        return False, "prediction is not a JSON object"
+    policy_targets = value.get("policy_targets")
+    if not isinstance(policy_targets, Mapping):
+        return False, "missing policy_targets object"
+    protected_values = policy_targets.get("protected_values")
+    if not isinstance(protected_values, list):
+        return False, "policy_targets.protected_values is not a list"
+    for item in protected_values:
+        if not isinstance(item, Mapping):
+            return False, "policy_targets.protected_values contains non-object entries"
+        if not isinstance(item.get("key"), str) or not item.get("key", "").strip():
+            return False, "policy_targets.protected_values contains an invalid key"
+        if not isinstance(item.get("value"), str) or not item.get("value", "").strip():
+            return False, "policy_targets.protected_values contains an invalid value"
+    return True, ""
+
+
 def coerce_scoring_target(value: Any) -> dict[str, dict[str, list[str]]]:
     """Return a normalized target object even for partially valid predictions."""
 
@@ -244,6 +300,15 @@ def coerce_key_value_scoring_target(value: Any) -> dict[str, dict[str, list[dict
     }
 
 
+def coerce_protected_key_value_target(value: Any) -> dict[str, dict[str, list[dict[str, str]]]]:
+    policy_targets = _as_mapping(value.get("policy_targets")) if isinstance(value, Mapping) else {}
+    return {
+        "policy_targets": {
+            "protected_values": _kv_entries_from_any(policy_targets.get("protected_values")),
+        }
+    }
+
+
 def target_uses_key_value(value: Any) -> bool:
     scoring_targets = _as_mapping(value.get("scoring_targets")) if isinstance(value, Mapping) else {}
     for list_key in ("allowed_values", "do_not_disclose_values"):
@@ -251,6 +316,18 @@ def target_uses_key_value(value: Any) -> bool:
         if isinstance(values, list) and any(isinstance(item, Mapping) for item in values):
             return True
     return False
+
+
+def target_uses_protected_key_value(value: Any) -> bool:
+    return isinstance(value, Mapping) and isinstance(value.get("policy_targets"), Mapping)
+
+
+def detect_target_schema(value: Any) -> str:
+    if target_uses_protected_key_value(value):
+        return "protected_key_value"
+    if target_uses_key_value(value):
+        return "key_value"
+    return "value"
 
 
 def build_user_prompt(sample: Mapping[str, Any]) -> str:
@@ -295,6 +372,8 @@ def build_target(sample: Mapping[str, Any], *, target_schema: str = "value") -> 
         return build_scoring_target(sample)
     if target_schema == "key_value":
         return build_key_value_scoring_target(sample)
+    if target_schema == "protected_key_value":
+        return build_protected_key_value_target(sample)
     raise ValueError(f"unknown target_schema: {target_schema}")
 
 
@@ -394,6 +473,8 @@ def evaluate_prediction(
     gold: Mapping[str, Any],
     prediction: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
+    if target_uses_protected_key_value(gold):
+        return evaluate_protected_key_value_prediction(gold, prediction)
     if target_uses_key_value(gold):
         return evaluate_key_value_prediction(gold, prediction)
 
@@ -416,6 +497,27 @@ def evaluate_prediction(
         "allowed_values": allowed,
         "do_not_disclose_values": protected,
         "exact_set_match": allowed["exact_match"] and protected["exact_match"],
+    }
+
+
+def evaluate_protected_key_value_prediction(
+    gold: Mapping[str, Any],
+    prediction: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    valid, schema_error = validate_protected_key_value_target(prediction)
+    coerced_prediction = coerce_protected_key_value_target(prediction or {})
+    coerced_gold = coerce_protected_key_value_target(gold)
+
+    protected = _entry_list_metrics(
+        coerced_gold["policy_targets"]["protected_values"],
+        coerced_prediction["policy_targets"]["protected_values"],
+    )
+
+    return {
+        "schema_valid": valid,
+        "schema_error": schema_error,
+        "protected_values": protected,
+        "exact_set_match": protected["pair_exact_match"],
     }
 
 
@@ -448,17 +550,24 @@ def evaluate_key_value_prediction(
 def summarize_evaluations(rows: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
     rows = list(rows)
     total = len(rows)
+    uses_protected_only = any(
+        "protected_values" in row.get("metrics", {}) for row in rows
+    )
     if total == 0:
-        return {
+        empty = {
             "num_examples": 0,
             "parse_rate": 0.0,
             "schema_valid_rate": 0.0,
             "exact_set_match_rate": 0.0,
-            "allowed_values": _avg_metric([]),
-            "do_not_disclose_values": _avg_metric([]),
         }
+        if uses_protected_only:
+            empty["protected_values"] = _avg_metric([])
+        else:
+            empty["allowed_values"] = _avg_metric([])
+            empty["do_not_disclose_values"] = _avg_metric([])
+        return empty
 
-    return {
+    summary = {
         "num_examples": total,
         "parse_rate": _mean(1.0 if row.get("parsed") else 0.0 for row in rows),
         "schema_valid_rate": _mean(
@@ -469,13 +578,19 @@ def summarize_evaluations(rows: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
             1.0 if row.get("metrics", {}).get("exact_set_match") else 0.0
             for row in rows
         ),
-        "allowed_values": _avg_metric(
-            row.get("metrics", {}).get("allowed_values", {}) for row in rows
-        ),
-        "do_not_disclose_values": _avg_metric(
-            row.get("metrics", {}).get("do_not_disclose_values", {}) for row in rows
-        ),
     }
+    if uses_protected_only:
+        summary["protected_values"] = _avg_metric(
+            row.get("metrics", {}).get("protected_values", {}) for row in rows
+        )
+    else:
+        summary["allowed_values"] = _avg_metric(
+            row.get("metrics", {}).get("allowed_values", {}) for row in rows
+        )
+        summary["do_not_disclose_values"] = _avg_metric(
+            row.get("metrics", {}).get("do_not_disclose_values", {}) for row in rows
+        )
+    return summary
 
 
 def normalize_value_key(value: str) -> str:

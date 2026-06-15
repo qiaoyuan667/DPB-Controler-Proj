@@ -40,9 +40,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--val-ratio", type=float, default=0.15)
     parser.add_argument(
         "--target-schema",
-        choices=["value", "key_value"],
+        choices=["value", "key_value", "protected_key_value"],
         default="value",
-        help="Use value-only targets or list-of-{key,value} targets.",
+        help="Use value-only, scoring key-value, or runtime protected-only key-value targets.",
     )
     return parser.parse_args()
 
@@ -75,6 +75,13 @@ def main() -> None:
         },
         "target_schema": args.target_schema,
         "target_shape": (
+            {
+                "policy_targets": {
+                    "protected_values": "list[{key: str, value: str}]",
+                }
+            }
+            if args.target_schema == "protected_key_value"
+            else
             {
                 "scoring_targets": {
                     "allowed_values": "list[{key: str, value: str}]",

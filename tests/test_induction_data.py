@@ -5,12 +5,15 @@ import unittest
 from privacy_runtime.induction_data import (
     build_induction_record,
     build_key_value_scoring_target,
+    build_protected_key_value_target,
     build_scoring_target,
+    detect_target_schema,
     evaluate_prediction,
     extract_json_object,
     is_p1_sample,
     split_records_by_domain,
     validate_key_value_scoring_target,
+    validate_protected_key_value_target,
     validate_scoring_target,
 )
 from scripts.train_inducer_qlora import tokenize_record
@@ -103,6 +106,24 @@ class InductionDataTests(unittest.TestCase):
         valid, error = validate_key_value_scoring_target(target)
         self.assertTrue(valid, error)
 
+    def test_build_protected_key_value_target_omits_allowed_values(self) -> None:
+        target = build_protected_key_value_target(self.sample())
+
+        self.assertEqual(
+            target,
+            {
+                "policy_targets": {
+                    "protected_values": [
+                        {"key": "name", "value": "Noah Baumann"},
+                    ],
+                }
+            },
+        )
+        self.assertEqual(detect_target_schema(target), "protected_key_value")
+        valid, error = validate_protected_key_value_target(target)
+        self.assertTrue(valid, error)
+        self.assertNotIn("allowed_values", str(target))
+
     def test_build_induction_record_contains_prompt_and_target_text(self) -> None:
         record = build_induction_record(self.sample())
 
@@ -119,6 +140,15 @@ class InductionDataTests(unittest.TestCase):
         self.assertIn('"key":"symptom"', record["target_text"])
         self.assertIn('"value":"Noah Baumann"', record["target_text"])
         self.assertIn('"key":"","value":""', record["messages"][0]["content"])
+
+    def test_build_protected_key_value_induction_record_contains_runtime_prompt(self) -> None:
+        record = build_induction_record(self.sample(), target_schema="protected_key_value")
+
+        self.assertEqual(record["target_schema"], "protected_key_value")
+        self.assertIn('"policy_targets"', record["target_text"])
+        self.assertIn('"protected_values"', record["target_text"])
+        self.assertNotIn("allowed_values", record["target_text"])
+        self.assertIn("Do not output allowed_values", record["messages"][0]["content"])
 
     def test_extract_json_object_from_fenced_output(self) -> None:
         parsed, error = extract_json_object(
@@ -166,6 +196,24 @@ class InductionDataTests(unittest.TestCase):
         self.assertEqual(metrics["allowed_values"]["value_recall"], 1.0)
         self.assertEqual(metrics["allowed_values"]["pair_recall"], 0.0)
         self.assertEqual(metrics["allowed_values"]["key_accuracy_on_matched_values"], 0.0)
+
+    def test_evaluate_protected_key_value_prediction(self) -> None:
+        gold = build_protected_key_value_target(self.sample())
+        prediction = {
+            "policy_targets": {
+                "protected_values": [
+                    {"key": "email", "value": "Noah Baumann"},
+                ],
+            }
+        }
+
+        metrics = evaluate_prediction(gold, prediction)
+
+        self.assertTrue(metrics["schema_valid"])
+        self.assertIn("protected_values", metrics)
+        self.assertNotIn("allowed_values", metrics)
+        self.assertEqual(metrics["protected_values"]["value_recall"], 1.0)
+        self.assertEqual(metrics["protected_values"]["pair_recall"], 0.0)
 
     def test_split_records_by_domain_is_stratified(self) -> None:
         records = [

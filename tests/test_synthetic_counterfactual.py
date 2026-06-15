@@ -3,7 +3,10 @@ from __future__ import annotations
 import unittest
 
 from privacy_runtime.induction_data import validate_scoring_target
-from privacy_runtime.induction_data import validate_key_value_scoring_target
+from privacy_runtime.induction_data import (
+    validate_key_value_scoring_target,
+    validate_protected_key_value_target,
+)
 from privacy_runtime.synthetic_counterfactual import (
     generate_synthetic_records,
     split_records_by_base_doc,
@@ -131,6 +134,23 @@ class SyntheticCounterfactualTests(unittest.TestCase):
         self.assertNotIn(values_by_category["home_address"], protected_values)
         self.assertNotIn(values_by_category["grade"], protected_values)
         self.assertIn("Set allowed_values to an empty list", record["input"])
+
+    def test_protected_key_value_schema_has_no_allowed_values(self) -> None:
+        record = generate_synthetic_records(
+            num_base_docs=1,
+            policies_per_doc=1,
+            seed=7,
+            target_schema="protected_key_value",
+            synthetic_mode="protected_only",
+        )[0]
+
+        valid, error = validate_protected_key_value_target(record["target"])
+        self.assertTrue(valid, error)
+        self.assertEqual(record["target_schema"], "protected_key_value")
+        self.assertIn("policy_targets", record["target"])
+        self.assertIn("protected_values", record["target"]["policy_targets"])
+        self.assertNotIn("allowed_values", record["target_text"])
+        self.assertIn("Do not output allowed_values", record["messages"][0]["content"])
 
 
 if __name__ == "__main__":

@@ -45,6 +45,11 @@ def run_name(path: str) -> str:
 def load_row(path: str) -> dict[str, Any]:
     with Path(path).open("r", encoding="utf-8") as handle:
         summary = json.load(handle)
+    protected_key = (
+        "protected_values"
+        if isinstance(summary.get("protected_values"), dict)
+        else "do_not_disclose_values"
+    )
     return {
         "run": run_name(path),
         "num_examples": safe_get(summary, "num_examples"),
@@ -52,18 +57,18 @@ def load_row(path: str) -> dict[str, Any]:
         "schema_valid_rate": safe_get(summary, "schema_valid_rate"),
         "protected_precision": safe_get(
             summary,
-            "do_not_disclose_values",
+            protected_key,
             "precision",
         ),
         "protected_recall": safe_get(
             summary,
-            "do_not_disclose_values",
+            protected_key,
             "recall",
         ),
-        "protected_f1": safe_get(summary, "do_not_disclose_values", "f1"),
+        "protected_f1": safe_get(summary, protected_key, "f1"),
         "protected_exact": safe_get(
             summary,
-            "do_not_disclose_values",
+            protected_key,
             "exact_match_rate",
         ),
         "allowed_precision": safe_get(summary, "allowed_values", "precision"),
@@ -139,4 +144,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

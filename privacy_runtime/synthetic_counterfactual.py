@@ -286,7 +286,7 @@ def build_counterfactual_record(
     synthetic_mode: str = "full_allowed",
 ) -> dict[str, Any]:
     protected_category_set = set(protected_categories)
-    if target_schema not in {"value", "key_value"}:
+    if target_schema not in {"value", "key_value", "protected_key_value"}:
         raise ValueError(f"unknown target_schema: {target_schema}")
     if synthetic_mode not in {"full_allowed", "protected_only", "sparse_allowed"}:
         raise ValueError(f"unknown synthetic_mode: {synthetic_mode}")
@@ -438,6 +438,13 @@ def summarize_synthetic_splits(
         "format_distribution": dict(sorted(format_counter.items())),
         "protected_category_distribution": dict(sorted(protected_counter.items())),
         "target_shape": (
+            {
+                "policy_targets": {
+                    "protected_values": "list[{key: str, value: str}]",
+                }
+            }
+            if target_schema == "protected_key_value"
+            else
             {
                 "scoring_targets": {
                     "allowed_values": "list[{key: str, value: str}]",
@@ -689,4 +696,6 @@ def _target_values(values: Iterable[SyntheticValue], *, target_schema: str) -> l
                 seen.add(pair_key)
                 out.append(build_value_entry(value.category, value.value))
         return out
+    if target_schema == "protected_key_value":
+        return _target_values(values, target_schema="key_value")
     raise ValueError(f"unknown target_schema: {target_schema}")
