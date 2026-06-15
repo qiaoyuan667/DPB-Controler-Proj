@@ -38,6 +38,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--train-ratio", type=float, default=0.70)
     parser.add_argument("--val-ratio", type=float, default=0.15)
+    parser.add_argument(
+        "--target-schema",
+        choices=["value", "key_value"],
+        default="value",
+        help="Use value-only targets or list-of-{key,value} targets.",
+    )
     return parser.parse_args()
 
 
@@ -45,7 +51,10 @@ def main() -> None:
     args = parse_args()
     samples = load_polar_repaired(args.input)
     p1_samples = filter_p1_samples(samples)
-    records = [build_induction_record(sample) for sample in p1_samples]
+    records = [
+        build_induction_record(sample, target_schema=args.target_schema)
+        for sample in p1_samples
+    ]
     splits = split_records_by_domain(
         records,
         train_ratio=args.train_ratio,
@@ -64,12 +73,22 @@ def main() -> None:
             "metadata.privacy_level": 1,
             "metadata.privacy_type": "explicit_field_constraints",
         },
-        "target_schema": {
-            "scoring_targets": {
-                "allowed_values": "list[str]",
-                "do_not_disclose_values": "list[str]",
+        "target_schema": args.target_schema,
+        "target_shape": (
+            {
+                "scoring_targets": {
+                    "allowed_values": "list[{key: str, value: str}]",
+                    "do_not_disclose_values": "list[{key: str, value: str}]",
+                }
             }
-        },
+            if args.target_schema == "key_value"
+            else {
+                "scoring_targets": {
+                    "allowed_values": "list[str]",
+                    "do_not_disclose_values": "list[str]",
+                }
+            }
+        ),
         "seed": args.seed,
         "train_ratio": args.train_ratio,
         "val_ratio": args.val_ratio,
@@ -89,4 +108,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

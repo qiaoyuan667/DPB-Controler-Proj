@@ -4,11 +4,13 @@ import unittest
 
 from privacy_runtime.induction_data import (
     build_induction_record,
+    build_key_value_scoring_target,
     build_scoring_target,
     evaluate_prediction,
     extract_json_object,
     is_p1_sample,
     split_records_by_domain,
+    validate_key_value_scoring_target,
     validate_scoring_target,
 )
 from scripts.train_inducer_qlora import tokenize_record
@@ -46,6 +48,14 @@ class InductionDataTests(unittest.TestCase):
                 "privacy_policy_text": "Share symptoms. Do not disclose my name.",
                 "task_instruction_text": "Classify urgency.",
             },
+            "hidden_target": {
+                "allowed_fields": ["symptom"],
+                "withheld_fields": ["name"],
+                "gold_sensitive_values": {"name": "Noah Baumann"},
+            },
+            "source_document_inputs": {
+                "task_relevant_fields": {"symptom": "lower back pain"},
+            },
             "scoring_targets": {
                 "allowed_values": ["lower back pain"],
                 "do_not_disclose_values": ["Noah Baumann"],
@@ -74,6 +84,25 @@ class InductionDataTests(unittest.TestCase):
         valid, error = validate_scoring_target(target)
         self.assertTrue(valid, error)
 
+    def test_build_key_value_scoring_target_uses_polar_fields(self) -> None:
+        target = build_key_value_scoring_target(self.sample())
+
+        self.assertEqual(
+            target,
+            {
+                "scoring_targets": {
+                    "allowed_values": [
+                        {"key": "symptom", "value": "lower back pain"},
+                    ],
+                    "do_not_disclose_values": [
+                        {"key": "name", "value": "Noah Baumann"},
+                    ],
+                }
+            },
+        )
+        valid, error = validate_key_value_scoring_target(target)
+        self.assertTrue(valid, error)
+
     def test_build_induction_record_contains_prompt_and_target_text(self) -> None:
         record = build_induction_record(self.sample())
 
@@ -82,6 +111,14 @@ class InductionDataTests(unittest.TestCase):
         self.assertIn("Task instruction:", record["input"])
         self.assertIn('"scoring_targets"', record["target_text"])
         self.assertEqual(record["messages"][-1]["role"], "assistant")
+
+    def test_build_key_value_induction_record_contains_key_value_prompt(self) -> None:
+        record = build_induction_record(self.sample(), target_schema="key_value")
+
+        self.assertEqual(record["target_schema"], "key_value")
+        self.assertIn('"key":"symptom"', record["target_text"])
+        self.assertIn('"value":"Noah Baumann"', record["target_text"])
+        self.assertIn('"key":"","value":""', record["messages"][0]["content"])
 
     def test_extract_json_object_from_fenced_output(self) -> None:
         parsed, error = extract_json_object(
@@ -108,6 +145,27 @@ class InductionDataTests(unittest.TestCase):
         self.assertEqual(metrics["allowed_values"]["recall"], 1.0)
         self.assertLess(metrics["allowed_values"]["precision"], 1.0)
         self.assertFalse(metrics["exact_set_match"])
+
+    def test_evaluate_key_value_prediction_scores_key_errors(self) -> None:
+        gold = build_key_value_scoring_target(self.sample())
+        prediction = {
+            "scoring_targets": {
+                "allowed_values": [
+                    {"key": "condition", "value": "lower back pain"},
+                ],
+                "do_not_disclose_values": [
+                    {"key": "name", "value": "Noah Baumann"},
+                ],
+            }
+        }
+
+        metrics = evaluate_prediction(gold, prediction)
+
+        self.assertTrue(metrics["schema_valid"])
+        self.assertEqual(metrics["do_not_disclose_values"]["pair_f1"], 1.0)
+        self.assertEqual(metrics["allowed_values"]["value_recall"], 1.0)
+        self.assertEqual(metrics["allowed_values"]["pair_recall"], 0.0)
+        self.assertEqual(metrics["allowed_values"]["key_accuracy_on_matched_values"], 0.0)
 
     def test_split_records_by_domain_is_stratified(self) -> None:
         records = [

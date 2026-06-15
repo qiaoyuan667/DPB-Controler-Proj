@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from privacy_runtime.induction_data import read_jsonl, write_jsonl  # noqa: E402
+from privacy_runtime.induction_data import read_jsonl, target_uses_key_value, write_jsonl  # noqa: E402
 from privacy_runtime.synthetic_counterfactual import (  # noqa: E402
     generate_synthetic_records,
     split_records_by_base_doc,
@@ -37,6 +37,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--train-ratio", type=float, default=0.70)
     parser.add_argument("--val-ratio", type=float, default=0.15)
+    parser.add_argument(
+        "--target-schema",
+        choices=["value", "key_value"],
+        default="value",
+        help="Use value-only targets or list-of-{key,value} targets.",
+    )
     return parser.parse_args()
 
 
@@ -51,6 +57,7 @@ def main() -> None:
         num_base_docs=args.num_base_docs,
         policies_per_doc=args.policies_per_doc,
         seed=args.seed,
+        target_schema=args.target_schema,
     )
     synthetic_splits = split_records_by_base_doc(
         synthetic_records,
@@ -64,6 +71,18 @@ def main() -> None:
     if polar_dir:
         for split in ("train", "val", "test"):
             polar_records = read_jsonl(polar_dir / f"{split}.jsonl")
+            if polar_records:
+                polar_uses_kv = target_uses_key_value(polar_records[0].get("target", {}))
+                if args.target_schema == "key_value" and not polar_uses_kv:
+                    raise ValueError(
+                        "--target-schema key_value requires a key-value POLAR split. "
+                        "Rebuild POLAR with scripts/build_polar_induction_dataset.py "
+                        "--target-schema key_value."
+                    )
+                if args.target_schema == "value" and polar_uses_kv:
+                    raise ValueError(
+                        "--target-schema value cannot mix with a key-value POLAR split."
+                    )
             polar_splits[split] = len(polar_records)
             output_splits[split] = polar_records + output_splits[split]
 
@@ -81,6 +100,7 @@ def main() -> None:
         mixed_with_polar=polar_dir is not None,
         polar_dir=str(polar_dir) if polar_dir else None,
         polar_splits=polar_splits,
+        target_schema=args.target_schema,
     )
     metadata["synthetic_splits"] = metadata.pop("splits")
     metadata["splits"] = {split: len(records) for split, records in output_splits.items()}

@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from privacy_runtime.induction_data import validate_scoring_target
+from privacy_runtime.induction_data import validate_key_value_scoring_target
 from privacy_runtime.synthetic_counterfactual import (
     generate_synthetic_records,
     split_records_by_base_doc,
@@ -85,6 +86,28 @@ class SyntheticCounterfactualTests(unittest.TestCase):
         tokenized = tokenize_record(TinyTokenizer(), record, max_length=64)
         self.assertEqual(len(tokenized["input_ids"]), 64)
         self.assertTrue(any(label != -100 for label in tokenized["labels"]))
+
+    def test_key_value_records_use_categories_as_keys(self) -> None:
+        record = generate_synthetic_records(
+            num_base_docs=1,
+            policies_per_doc=1,
+            seed=7,
+            target_schema="key_value",
+        )[0]
+
+        valid, error = validate_key_value_scoring_target(record["target"])
+        self.assertTrue(valid, error)
+        protected_entries = record["target"]["scoring_targets"]["do_not_disclose_values"]
+        self.assertEqual(
+            [(entry["key"], entry["value"]) for entry in protected_entries],
+            [
+                ("name", protected_entries[0]["value"]),
+                ("email", protected_entries[1]["value"]),
+                ("phone", protected_entries[2]["value"]),
+            ],
+        )
+        self.assertEqual(record["target_schema"], "key_value")
+        self.assertIn('"key":"name"', record["target_text"])
 
 
 if __name__ == "__main__":

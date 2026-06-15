@@ -11,8 +11,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from privacy_runtime.induction_data import (  # noqa: E402
-    SYSTEM_PROMPT,
     extract_json_object,
+    get_system_prompt,
     read_jsonl,
     write_jsonl,
 )
@@ -30,6 +30,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num-shots", type=int, default=0)
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--max-new-tokens", type=int, default=512)
+    parser.add_argument(
+        "--target-schema",
+        choices=["value", "key_value"],
+        default="value",
+        help="Expected output schema for the system prompt.",
+    )
     parser.add_argument("--load-in-4bit", action="store_true")
     parser.add_argument(
         "--torch-dtype",
@@ -95,8 +101,8 @@ def load_model_and_tokenizer(args: argparse.Namespace):
     return model, tokenizer
 
 
-def build_prompt(tokenizer, record: dict, shots: list[dict]) -> str:
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+def build_prompt(tokenizer, record: dict, shots: list[dict], *, target_schema: str) -> str:
+    messages = [{"role": "system", "content": get_system_prompt(target_schema)}]
     for shot in shots:
         messages.append({"role": "user", "content": str(shot["input"])})
         messages.append({"role": "assistant", "content": str(shot["target_text"])})
@@ -156,7 +162,7 @@ def main() -> None:
     model, tokenizer = load_model_and_tokenizer(args)
     outputs = []
     for index, record in enumerate(records, start=1):
-        prompt = build_prompt(tokenizer, record, shots)
+        prompt = build_prompt(tokenizer, record, shots, target_schema=args.target_schema)
         prediction_text = generate_one(model, tokenizer, prompt, args.max_new_tokens)
         prediction, parse_error = extract_json_object(prediction_text)
         row = {
@@ -169,6 +175,7 @@ def main() -> None:
             "model": args.model,
             "adapter": args.adapter,
             "num_shots": args.num_shots,
+            "target_schema": args.target_schema,
         }
         outputs.append(row)
         print(

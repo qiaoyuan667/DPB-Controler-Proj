@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from privacy_runtime.induction_data import SYSTEM_PROMPT, read_jsonl  # noqa: E402
+from privacy_runtime.induction_data import get_system_prompt, read_jsonl  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -73,8 +73,9 @@ def apply_chat_template(tokenizer, messages: list[dict[str, str]], *, add_genera
 
 
 def prompt_messages(record: dict[str, Any]) -> list[dict[str, str]]:
+    target_schema = str(record.get("target_schema") or "value")
     return [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": get_system_prompt(target_schema)},
         {"role": "user", "content": str(record["input"])},
     ]
 

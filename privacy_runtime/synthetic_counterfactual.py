@@ -5,10 +5,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping
 
-from privacy_runtime.induction_data import (
-    build_induction_record,
-    normalize_value_key,
-)
+from privacy_runtime.induction_data import build_induction_record, build_value_entry, normalize_value_key
 
 
 SYNTHETIC_DOMAIN = "synthetic_counterfactual"
@@ -193,6 +190,7 @@ def generate_synthetic_records(
     num_base_docs: int = 250,
     policies_per_doc: int = 4,
     seed: int = 42,
+    target_schema: str = "value",
 ) -> list[dict[str, Any]]:
     if num_base_docs <= 0:
         raise ValueError("num_base_docs must be positive")
@@ -205,7 +203,14 @@ def generate_synthetic_records(
         base_doc = build_base_document(index, rng)
         for policy_index in range(policies_per_doc):
             categories = select_policy_categories(index, policy_index)
-            records.append(build_counterfactual_record(base_doc, policy_index, categories))
+            records.append(
+                build_counterfactual_record(
+                    base_doc,
+                    policy_index,
+                    categories,
+                    target_schema=target_schema,
+                )
+            )
     return records
 
 
@@ -274,16 +279,23 @@ def build_counterfactual_record(
     base_doc: BaseDocument,
     policy_index: int,
     protected_categories: Iterable[str],
+    *,
+    target_schema: str = "value",
 ) -> dict[str, Any]:
     protected_category_set = set(protected_categories)
-    protected_values = [
-        value.value for value in base_doc.values if value.category in protected_category_set
+    if target_schema not in {"value", "key_value"}:
+        raise ValueError(f"unknown target_schema: {target_schema}")
+    protected_items = [
+        value for value in base_doc.values if value.category in protected_category_set
     ]
-    allowed_values = [
-        value.value
+    allowed_items = [
+        value
         for value in base_doc.values
         if value.allowed and value.category not in protected_category_set
     ]
+    protected_values = _unique_keep_order(value.value for value in protected_items)
+    allowed_values = _unique_keep_order(value.value for value in allowed_items)
+    values_by_category = {value.category: value.value for value in base_doc.values}
     sample = {
         "sample_id": f"{base_doc.base_doc_id}_policy_{policy_index:02d}",
         "domain": SYNTHETIC_DOMAIN,
@@ -300,12 +312,25 @@ def build_counterfactual_record(
             "privacy_policy_text": render_privacy_policy(sorted(protected_category_set)),
             "task_instruction_text": base_doc.task_instruction,
         },
+        "hidden_target": {
+            "allowed_fields": [value.category for value in allowed_items],
+            "withheld_fields": [value.category for value in protected_items],
+            "gold_sensitive_values": values_by_category,
+        },
+        "source_document_inputs": {
+            "document_form": base_doc.source_format,
+            "document_type": "synthetic_counterfactual_note",
+            "task_relevant_fields": {
+                value.category: value.value for value in allowed_items
+            },
+            "private_fields_embedded": values_by_category,
+        },
         "scoring_targets": {
-            "allowed_values": _unique_keep_order(allowed_values),
-            "do_not_disclose_values": _unique_keep_order(protected_values),
+            "allowed_values": allowed_values,
+            "do_not_disclose_values": protected_values,
         },
     }
-    record = build_induction_record(sample)
+    record = build_induction_record(sample, target_schema=target_schema)
     record.update(
         {
             "base_doc_id": base_doc.base_doc_id,
@@ -369,6 +394,7 @@ def summarize_synthetic_splits(
     mixed_with_polar: bool = False,
     polar_dir: str | None = None,
     polar_splits: Mapping[str, int] | None = None,
+    target_schema: str = "value",
 ) -> dict[str, Any]:
     synthetic_records = [record for split in splits.values() for record in split]
     protected_counter: Counter[str] = Counter()
@@ -386,6 +412,7 @@ def summarize_synthetic_splits(
         "train_ratio": train_ratio,
         "val_ratio": val_ratio,
         "mixed_with_polar": mixed_with_polar,
+        "target_schema": target_schema,
         "polar_dir": polar_dir,
         "polar_splits": dict(polar_splits or {}),
         "synthetic_records": len(synthetic_records),
@@ -396,12 +423,21 @@ def summarize_synthetic_splits(
         },
         "format_distribution": dict(sorted(format_counter.items())),
         "protected_category_distribution": dict(sorted(protected_counter.items())),
-        "target_schema": {
-            "scoring_targets": {
-                "allowed_values": "list[str]",
-                "do_not_disclose_values": "list[str]",
+        "target_shape": (
+            {
+                "scoring_targets": {
+                    "allowed_values": "list[{key: str, value: str}]",
+                    "do_not_disclose_values": "list[{key: str, value: str}]",
+                }
             }
-        },
+            if target_schema == "key_value"
+            else {
+                "scoring_targets": {
+                    "allowed_values": "list[str]",
+                    "do_not_disclose_values": "list[str]",
+                }
+            }
+        ),
     }
 
 
@@ -583,3 +619,19 @@ def _unique_keep_order(values: Iterable[str]) -> list[str]:
             seen.add(key)
             out.append(value)
     return out
+
+
+def _target_values(values: Iterable[SyntheticValue], *, target_schema: str) -> list[Any]:
+    values = list(values)
+    if target_schema == "value":
+        return _unique_keep_order(value.value for value in values)
+    if target_schema == "key_value":
+        seen: set[tuple[str, str]] = set()
+        out: list[dict[str, str]] = []
+        for value in values:
+            pair_key = (normalize_value_key(value.category), normalize_value_key(value.value))
+            if pair_key not in seen:
+                seen.add(pair_key)
+                out.append(build_value_entry(value.category, value.value))
+        return out
+    raise ValueError(f"unknown target_schema: {target_schema}")
