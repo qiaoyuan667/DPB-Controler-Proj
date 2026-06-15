@@ -33,10 +33,6 @@ Rules:
 - Output concrete values, not field names. For example, output "Noah Baumann",
   not "name"; output "lower back pain", not "symptom".
 - Use values as they appear in the source document when possible.
-- The privacy policy is authoritative and must be followed exactly.
-- Put a value in do_not_disclose_values only when the privacy policy explicitly
-  forbids disclosing that concrete value or category of value.
-- Do not broaden the policy based on what seems sensitive.
 - If a policy allows only an abstraction, put the exact private value in
   do_not_disclose_values, not in allowed_values.
 - Do not include explanations, markdown, comments, or chain-of-thought."""
