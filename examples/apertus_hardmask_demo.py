@@ -24,6 +24,9 @@ from privacy_runtime import (  # noqa: E402
 )
 
 
+DEFAULT_MAX_NEW_TOKENS = 512
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run a local Apertus trusted-model hard-mask demo."
@@ -57,7 +60,7 @@ def parse_args() -> argparse.Namespace:
         help="UTF-8 text file containing the attacker/user message.",
     )
     parser.add_argument("--system-text", default="You are a helpful trusted assistant.")
-    parser.add_argument("--max-new-tokens", type=int, default=256)
+    parser.add_argument("--max-new-tokens", type=int, default=DEFAULT_MAX_NEW_TOKENS)
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--top-p", type=float, default=1.0)
     parser.add_argument("--do-sample", action="store_true")

@@ -218,6 +218,7 @@ class ApertusHardMaskTests(unittest.TestCase):
         self.assertIsNone(args.source_file)
         self.assertIsNone(args.attacker_text)
         self.assertIsNone(args.attacker_file)
+        self.assertEqual(args.max_new_tokens, 512)
         self.assertEqual(args.rewind_strategy, "value")
         self.assertEqual(args.dependency_model, "en_core_web_sm")
 

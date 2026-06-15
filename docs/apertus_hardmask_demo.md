@@ -85,7 +85,8 @@ python examples/apertus_hardmask_demo.py \
 - `--source-file`: UTF-8 text file containing the trusted source document.
 - `--attacker-text`: External attacker/user message sent to the trusted model.
 - `--attacker-file`: UTF-8 text file containing the attacker/user message.
-- `--max-new-tokens`: Maximum generated tokens for both baseline and hard-mask replies.
+- `--max-new-tokens`: Maximum generated tokens for both baseline and hard-mask
+  replies. Defaults to 512.
 - `--trace-generation`: Add a step-by-step greedy hard-mask decoding trace.
 - `--trace-top-k`: Number of raw/masked top tokens to show per traced step.
 - `--trace-output-dir`: Directory for detailed trace JSON files.
