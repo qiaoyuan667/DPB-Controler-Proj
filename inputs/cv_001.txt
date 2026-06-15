@@ -1,16 +1,96 @@
-Subject: Application for Data Analyst Internship
+[Page 1]
+Qiaoyuan ZHENG
+zqiaoyuan@ethz.ch qiaoyuan.zheng@foxmail.com (+41) 76 625 10 53
+Beckhammer 19, 8057 Zürich, Switzerland
+EDUCATION
+M.Sc. ETH Zürich, D-INFK 2025.09 -
+• Data Science
+L.Sc. Sorbonne University, Faculty of Science and Engineering 2022.09 - 2025.06
+• Double Major in Computer Science and Mathematics
+• Average Grade: 17.10/20 GPA:3.96/4.0(according to WES) L3 Mention:Bien
+D.U. University Paris Cité, University Diploma of French Language and Civilization 2022.02 - 2022.06
+• Faculty of Society and Humanities
+• Mention : Bien (14-16/20)
+French Courses of Xianda College of Shanghai International Studies University 2021.09 - 2022.01
+• School of International Education, French course without diploma or certificate
+• Learning French to satisfy the condition of Sorbonne University and University Paris Cité
+• passed the TCF examination, level B1
+Hangzhou Xuejun High School 2018.09 - 2021.06
+• China College Admission Examination Scores: 636/750
+• Got A/A Grade in all 10 courses in” The Academic Test for The Ordinary Highschool Students”:
+Chinese, Math, English, Physics, Chemistry, Biology, Politics, History, Geography,
+Technology (Computer Science)
+Language Skills:
+Chinese:Native
+English:Fluent(IELTS 7.5,GRE 328)
+French:Fluent(DELF B2)
+German:Beginner
+INTERNSHIP
+ESIEE Paris 2023.07 - 2023.08
+Researcher
+ Worked with graduate students under the supervision of Dr. You Jiang to implement a new kernel, U-
+Net 24, for time series forecasting.
+ Conducted initial literature review by reading 10+ papers weekly in preparation for independent model
+replication procedures. Selected the best and most efficient models for downstream comparative
+testing.
+ Replicated several time series models based on Encoder-Only/Decoder-only/ Enc-Dec Transformer,
+and patchTST from GitHub and Arxiv.
+ Adjusted the compatibility of the input and output data and the template training code so that these
+models could successfully run in our database. Performed extensive fixes to resolve incompatibility
+issues.
+ Ran tests on synthetic datasets to compare the optimization and time complexity of these models to U-
+Net 24.
+ Results of my work are used in the doctoral paper of Dr. You Jiang slated to be published in 2025.
+ Tools used: VSCode, Github, Python, Git, Pytorch, Jupyter Notebook
+ https://github.com/qiaoyuan667/DEC_ENC_Transformer
 
-Dear Hiring Team,
-
-My name is Clara Meier, and I am writing to express my interest in the Data Analyst Internship position at Alpine Retail Analytics. I am currently completing my MSc in Data Science at the University of Zurich, where I have focused on statistical modeling, Python programming, and applied machine learning.
-
-I can be reached at clara.meier@example.com or by phone at +41 79 482 1930. My current residential address is Seefeldstrasse 84, 8008 Zurich, Switzerland.
-
-During my recent research assistant role at the Institute for Computational Economics, I worked on customer segmentation models using Python, pandas, scikit-learn, and SQL. I also helped prepare dashboards for internal stakeholders and contributed to a small forecasting project for retail demand planning.
-
-Before that, I completed a Bachelor of Science in Economics at the University of Lausanne. My undergraduate thesis examined pricing behavior in online grocery markets. I graduated with a GPA of 5.4/6.0 and received a departmental award for academic performance.
-
-I am particularly interested in this internship because it combines analytics, product thinking, and business decision-making. I would be happy to discuss how my background in data analysis and machine learning could contribute to your team.
-
-Sincerely,
-Clara Meier
+[Page 2]
+PROJECTS
+Generating Aperiodic Tiling Images 2024.03 - 2024.07
+ Wrote multiple programs to generate Penrose tiling, Wang tiling, and Hat tiling, supervised by Dr.
+Charles BOUILLAGUET, Associate Professor with Accreditation to Supervise Research (HDR) at
+Sorbonne University.
+ Used the substitution method to generate Penrose tiling, and designed a redundancy detection
+mechanism to decrease algorithm complexity.
+ Used the idea of DFS and the matching rules method to splice Wang’s tiles; Optimized the algorithm by
+programming it to ignore the tiles with coordinates that exceed the size of the paving, thus saving on
+computational power instead of generating all portions of large, complete triangles to begin with.
+ Attempted to independently solve the Einstein problem by generating Meta-tiles of Hat tiling based on a
+published paper on Combinatorial Theory: https://escholarship.org/uc/item/3317z9z9
+ Studied the time required to run the three algorithms in relation to the sizes of the generated tilings.
+ Tools used: Python, Jupyter Notebook, Git, SVG, Numpy
+ https://github.com/CroustitBat/Projet-Pavages-Aperiodiques
+Implementation and Comparison of the Algorithms Q-Learning and Sarsa 2023.07 - 2023.08
+ Created a map editor as a visual interface that automatically converts maps into numpy arrays and
+saves them as json files under the supervision of Dr. YOU Jiang, Research Assistant at ESIEE Paris
+and UPEC.
+ Designed 15 maps of grid world games with the differences between algorithms in mind in order to
+make the most effective comparisons.
+ Implemented the Q-learning and Sarsa models of intelligence on different maps, adjusted parameters
+and trained them on each map, and analyzed results for the strengths and weaknesses of each model.
+ The maps and editor I designed are currently adopted as an exercise for second-year postgraduate
+students at the Université Paris-Est Créteil (UPEC) to advance their understanding of various models of
+intelligence.
+ Tools used: Python, Pygame, Jupyter Notebook, Matplotlib, Numpy
+ https://github.com/qiaoyuan667/Q-learning-Sarsa-DQN-in-grid-world
+Statistical Analysis and Report of COVID-19 Data and Relevant Factors 2020.02 - 2021.12
+ Spearheaded a team of 4 to investigate the change in the amount of time that people in different
+countries spent at home during the COVID-19 pandemic.
+ Searched for and selected databases, processed data with linear regression and taught team members
+to do it, visualized obtained data, and analyzed how policies affected correlations.
+ Found the quarantine measures and government threat level advisory of some countries to be
+ineffective due to their inverse correlation with general time spent at home and the actual local severity
+of the pandemic; advised governments to remain flexible in adjusting their policies to foster public faith
+and prevent the public from using their own judgments to estimate local severity.
+ This is a Supervised Research Program of 4EU+ Alliance (Atélier Recherche Encadré de COVID &
+DATA Literacy de 4EU+ Alliance) under the direction of Olivier MILHAUD, Associated Professor of
+Sorbonne University.
+ Tools used: Python, Jupyter Notebook, Numpy, Matplotlib
+KNOWLEDGE
+ Courses taken in Math: Liner Algebra, Digital and Functional Series, Topology, Theory of Measurement,
+Lebesgue Integral, Theory of Probability, Discrete Mathematics
+ Courses taken in CS: Object-oriented Programming, Advanced C, Data Science, Database, Operating
+Systems, Algorithms, Data Structure, Functional Programming
+ Programming: Python, C, JAVA, Visual Basic, OCmal, Pascal, SQL, LATEX.
+ Familiar Technology: Endoder-only/Decoder-only/Enc-Dec Transformer, patchTST, Q-learning, Sarsa,
+DQN
