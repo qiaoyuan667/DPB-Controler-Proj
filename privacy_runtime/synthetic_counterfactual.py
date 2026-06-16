@@ -417,7 +417,7 @@ def summarize_synthetic_splits(
         protected_counter.update(str(category) for category in record.get("protected_categories", []))
 
     return {
-        "dataset": "synthetic_counterfactual_v1",
+        "dataset": "synthetic_counterfactual",
         "domain": SYNTHETIC_DOMAIN,
         "seed": seed,
         "num_base_docs": num_base_docs,

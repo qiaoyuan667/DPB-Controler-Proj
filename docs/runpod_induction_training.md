@@ -1,16 +1,22 @@
-# RunPod: POLAR P1 Minimal Induction Training
+# RunPod: Protected-Only Policy Induction Training
 
-This workflow trains a local Qwen3-1.7B policy inducer to predict the minimal
-POLAR-aligned target:
+This workflow trains a local Qwen3-1.7B policy inducer to extract only the
+values that the privacy policy explicitly protects.
+
+Current target schema:
 
 ```json
 {
-  "scoring_targets": {
-    "allowed_values": [],
-    "do_not_disclose_values": []
+  "policy_targets": {
+    "protected_values": [
+      {"key": "email", "value": "name@example.com"}
+    ]
   }
 }
 ```
+
+The old `allowed_values` target is intentionally not used in the current runtime
+training flow.
 
 ## 1. Install Dependencies
 
@@ -26,7 +32,7 @@ pip install -r requirements-train.txt
 
 If model loading fails with `RuntimeError: operator torchvision::nms does not
 exist`, the RunPod image has an incompatible `torchvision` package. This project
-uses text-only Qwen models, so the simplest fix is to remove `torchvision`:
+uses text-only Qwen models, so the simplest fix is:
 
 ```bash
 pip uninstall -y torchvision
@@ -36,109 +42,94 @@ print("torch", torch.__version__)
 PY
 ```
 
-Then rerun the inference or training command. If another project on the same Pod
-needs vision models, install a `torchvision` wheel that exactly matches the
-installed PyTorch/CUDA version instead of uninstalling it.
-
-Confirm the repaired dataset is the real JSON file, not a Git LFS pointer:
+Confirm the repaired POLAR file is real JSON, not a Git LFS pointer:
 
 ```bash
 ls -lh polar_bench_upstream/data/privacy_benchmark_rendered_repaired.json
 head -n 2 polar_bench_upstream/data/privacy_benchmark_rendered_repaired.json
 ```
 
-The file should be hundreds of MB and start with `[` followed by JSON objects. If
-it starts with `version https://git-lfs.github.com/spec/v1`, run the Git LFS
-commands above again inside the repository.
+The file should be hundreds of MB and start with `[` followed by JSON objects.
 
-## 2. Build P1 Dataset
+## 2. Build Current Datasets
 
-Use the repaired rendered POLAR-Bench dataset:
+Build POLAR P1 with the protected-only key-value target:
 
 ```bash
 python scripts/build_polar_induction_dataset.py \
   --input polar_bench_upstream/data/privacy_benchmark_rendered_repaired.json \
-  --output-dir data/induction/p1_scoring_targets \
+  --output-dir data/induction/p1_protected_key_value \
+  --target-schema protected_key_value \
   --seed 42
 ```
 
-Expected outputs:
+Build the synthetic counterfactual dataset:
 
-```text
-data/induction/p1_scoring_targets/train.jsonl
-data/induction/p1_scoring_targets/val.jsonl
-data/induction/p1_scoring_targets/test.jsonl
-data/induction/p1_scoring_targets/metadata.json
+```bash
+python scripts/build_synthetic_counterfactual_dataset.py \
+  --output-dir data/induction/synthetic_counterfactual_v3_protected_key_value \
+  --target-schema protected_key_value \
+  --synthetic-mode protected_only \
+  --num-base-docs 250 \
+  --policies-per-doc 4 \
+  --seed 42
 ```
 
-## 3. Zero-Shot Baseline
+Build the mixed training split used for the current adapter:
+
+```bash
+python scripts/build_synthetic_counterfactual_dataset.py \
+  --output-dir data/induction/mixed_p1_synthetic_v3_protected_key_value \
+  --polar-dir data/induction/p1_protected_key_value \
+  --target-schema protected_key_value \
+  --synthetic-mode protected_only \
+  --num-base-docs 250 \
+  --policies-per-doc 4 \
+  --seed 42
+```
+
+## 3. Baselines
+
+Zero-shot:
 
 ```bash
 python scripts/run_induction_inference.py \
-  --input data/induction/p1_scoring_targets/test.jsonl \
-  --output runs/induction/qwen3_1p7b_zero_shot.jsonl \
+  --input data/induction/mixed_p1_synthetic_v3_protected_key_value/test.jsonl \
+  --output runs/induction/qwen3_1p7b_zero_shot_protected_kv.jsonl \
   --model Qwen/Qwen3-1.7B \
+  --target-schema protected_key_value \
   --torch-dtype bfloat16
 
 python scripts/eval_induction_predictions.py \
-  --predictions runs/induction/qwen3_1p7b_zero_shot.jsonl
+  --predictions runs/induction/qwen3_1p7b_zero_shot_protected_kv.jsonl
 ```
 
-## 4. Few-Shot Baseline
+Few-shot:
 
 ```bash
 python scripts/run_induction_inference.py \
-  --input data/induction/p1_scoring_targets/test.jsonl \
-  --output runs/induction/qwen3_1p7b_few_shot_3.jsonl \
+  --input data/induction/mixed_p1_synthetic_v3_protected_key_value/test.jsonl \
+  --output runs/induction/qwen3_1p7b_few_shot_3_protected_kv.jsonl \
   --model Qwen/Qwen3-1.7B \
-  --few-shot-file data/induction/p1_scoring_targets/train.jsonl \
+  --few-shot-file data/induction/mixed_p1_synthetic_v3_protected_key_value/train.jsonl \
   --num-shots 3 \
+  --target-schema protected_key_value \
   --torch-dtype bfloat16
 
 python scripts/eval_induction_predictions.py \
-  --predictions runs/induction/qwen3_1p7b_few_shot_3.jsonl
+  --predictions runs/induction/qwen3_1p7b_few_shot_3_protected_kv.jsonl
 ```
 
-## 5. QLoRA SFT
+## 4. LoRA Training
 
-```bash
-python scripts/train_inducer_qlora.py \
-  --train-file data/induction/p1_scoring_targets/train.jsonl \
-  --val-file data/induction/p1_scoring_targets/val.jsonl \
-  --output-dir runs/induction/qwen3_1p7b_qlora \
-  --model Qwen/Qwen3-1.7B \
-  --bf16 \
-  --epochs 3 \
-  --batch-size 1 \
-  --gradient-accumulation-steps 8 \
-  --learning-rate 2e-4 \
-  --max-length 4096
-```
-
-## 6. Adapter Inference and Evaluation
-
-```bash
-python scripts/run_induction_inference.py \
-  --input data/induction/p1_scoring_targets/test.jsonl \
-  --output runs/induction/qwen3_1p7b_qlora_test.jsonl \
-  --model Qwen/Qwen3-1.7B \
-  --adapter runs/induction/qwen3_1p7b_qlora \
-  --torch-dtype bfloat16
-
-python scripts/eval_induction_predictions.py \
-  --predictions runs/induction/qwen3_1p7b_qlora_test.jsonl
-```
-
-## 7. Epoch Ablation and Run Comparison
-
-Train 1/2/3 epoch adapters in separate directories:
+Train 1, 2, and 3 epoch adapters:
 
 ```bash
 for EPOCHS in 1 2 3; do
   python scripts/train_inducer_qlora.py \
-    --train-file data/induction/p1_scoring_targets/train.jsonl \
-    --val-file data/induction/p1_scoring_targets/val.jsonl \
-    --output-dir runs/induction/qwen3_1p7b_lora_no4bit_${EPOCHS}epoch_v2 \
+    --train-file data/induction/mixed_p1_synthetic_v3_protected_key_value/train.jsonl \
+    --val-file data/induction/mixed_p1_synthetic_v3_protected_key_value/val.jsonl \
+    --output-dir runs/induction/qwen3_1p7b_lora_mixed_v3_protected_kv_${EPOCHS}epoch \
     --model Qwen/Qwen3-1.7B \
     --no-4bit \
     --bf16 \
@@ -150,70 +141,64 @@ for EPOCHS in 1 2 3; do
 done
 ```
 
-Run each adapter on the test split:
+If bf16 is unavailable, replace `--bf16` with `--fp16`. If CUDA memory is tight,
+reduce `--max-length` to `1536`.
+
+## 5. Adapter Inference and Evaluation
 
 ```bash
 for EPOCHS in 1 2 3; do
   python scripts/run_induction_inference.py \
-    --input data/induction/p1_scoring_targets/test.jsonl \
-    --output runs/induction/qwen3_1p7b_lora_no4bit_${EPOCHS}epoch_v2_test.jsonl \
+    --input data/induction/mixed_p1_synthetic_v3_protected_key_value/test.jsonl \
+    --output runs/induction/qwen3_1p7b_lora_mixed_v3_protected_kv_${EPOCHS}epoch_test.jsonl \
     --model Qwen/Qwen3-1.7B \
-    --adapter runs/induction/qwen3_1p7b_lora_no4bit_${EPOCHS}epoch_v2 \
+    --adapter runs/induction/qwen3_1p7b_lora_mixed_v3_protected_kv_${EPOCHS}epoch \
+    --target-schema protected_key_value \
     --torch-dtype bfloat16
 
   python scripts/eval_induction_predictions.py \
-    --predictions runs/induction/qwen3_1p7b_lora_no4bit_${EPOCHS}epoch_v2_test.jsonl
+    --predictions runs/induction/qwen3_1p7b_lora_mixed_v3_protected_kv_${EPOCHS}epoch_test.jsonl
 done
 ```
 
-Compare zero-shot, few-shot, and LoRA runs:
+Compare run summaries:
 
 ```bash
 python scripts/compare_induction_runs.py \
-  runs/induction/qwen3_1p7b_zero_shot.jsonl.summary.json \
-  runs/induction/qwen3_1p7b_few_shot_3.jsonl.summary.json \
-  runs/induction/qwen3_1p7b_lora_no4bit_1epoch_v2_test.jsonl.summary.json \
-  runs/induction/qwen3_1p7b_lora_no4bit_2epochs_v2_test.jsonl.summary.json \
-  runs/induction/qwen3_1p7b_lora_no4bit_3epochs_v2_test.jsonl.summary.json \
-  --output runs/induction/induction_comparison.csv
+  runs/induction/qwen3_1p7b_zero_shot_protected_kv.jsonl.summary.json \
+  runs/induction/qwen3_1p7b_few_shot_3_protected_kv.jsonl.summary.json \
+  runs/induction/qwen3_1p7b_lora_mixed_v3_protected_kv_1epoch_test.jsonl.summary.json \
+  runs/induction/qwen3_1p7b_lora_mixed_v3_protected_kv_2epoch_test.jsonl.summary.json \
+  runs/induction/qwen3_1p7b_lora_mixed_v3_protected_kv_3epoch_test.jsonl.summary.json \
+  --output runs/induction/induction_comparison_protected_kv.csv
 ```
 
-If `bitsandbytes` fails with `Missing dependency: libnvJitLink.so.13`, do not
-use `--load-in-4bit` for Qwen3-1.7B inference. The model is small enough to run
-in bf16/fp16 on common 24GB GPUs. For training, either fix the CUDA/bitsandbytes
-stack or run LoRA without 4-bit:
+## 6. Custom Policy Inference
 
-For 24GB GPUs, start with `--max-length 2048`. If CUDA reports fragmentation,
-set:
+For a custom CV or document JSONL:
 
 ```bash
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-```
-
-```bash
-python scripts/train_inducer_qlora.py \
-  --train-file data/induction/p1_scoring_targets/train.jsonl \
-  --val-file data/induction/p1_scoring_targets/val.jsonl \
-  --output-dir runs/induction/qwen3_1p7b_lora_no4bit \
+python scripts/run_induction_inference.py \
+  --input data/custom/cv_policy_input.jsonl \
+  --output runs/induction/cv_001_mixed_v3_protected_kv_2epoch.jsonl \
   --model Qwen/Qwen3-1.7B \
-  --no-4bit \
-  --bf16 \
-  --epochs 3 \
-  --batch-size 1 \
-  --gradient-accumulation-steps 8 \
-  --learning-rate 2e-4 \
-  --max-length 2048
+  --adapter runs/induction/qwen3_1p7b_lora_mixed_v3_protected_kv_2epoch \
+  --target-schema protected_key_value \
+  --torch-dtype bfloat16
 ```
+
+The output JSONL contains `prediction.policy_targets.protected_values`.
 
 ## Primary Metric
 
-Use `do_not_disclose_values.recall` as the primary metric. A missed protected
-value cannot be recovered by downstream runtime checks.
+Use `protected_values.recall` as the primary metric. A missed protected value
+cannot be recovered by downstream runtime checks.
 
 Secondary metrics:
 
 - JSON parse rate
 - schema validity
-- `do_not_disclose_values` precision / F1
-- `allowed_values` precision / recall / F1
-- exact set match
+- `protected_values` precision / F1
+- pair precision / recall / F1
+- value precision / recall / F1
+- key accuracy on matched values

@@ -23,7 +23,7 @@ from privacy_runtime.induction_data import (  # noqa: E402
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build minimal POLAR P1 policy-induction train/val/test JSONL files."
+        description="Build POLAR P1 policy-induction train/val/test JSONL files."
     )
     parser.add_argument(
         "--input",
@@ -32,7 +32,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output-dir",
-        default="data/induction/p1_scoring_targets",
+        default="data/induction/p1_protected_key_value",
         help="Directory for train.jsonl, val.jsonl, test.jsonl, and metadata.json.",
     )
     parser.add_argument("--seed", type=int, default=42)
@@ -41,7 +41,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--target-schema",
         choices=["value", "key_value", "protected_key_value"],
-        default="value",
+        default="protected_key_value",
         help="Use value-only, scoring key-value, or runtime protected-only key-value targets.",
     )
     return parser.parse_args()

@@ -4,7 +4,7 @@
     "train": 175,
     "val": 37
   },
-  "dataset": "synthetic_counterfactual_v1",
+  "dataset": "synthetic_counterfactual",
   "domain": "synthetic_counterfactual",
   "format_distribution": {
     "application_form": 100,

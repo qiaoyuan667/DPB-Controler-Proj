@@ -24,7 +24,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output-dir",
-        default="data/induction/synthetic_counterfactual_v1",
+        default="data/induction/synthetic_counterfactual_v3_protected_key_value",
         help="Directory for train.jsonl, val.jsonl, test.jsonl, and metadata.json.",
     )
     parser.add_argument(
@@ -40,13 +40,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--target-schema",
         choices=["value", "key_value", "protected_key_value"],
-        default="value",
+        default="protected_key_value",
         help="Use value-only, scoring key-value, or runtime protected-only key-value targets.",
     )
     parser.add_argument(
         "--synthetic-mode",
         choices=["full_allowed", "protected_only", "sparse_allowed"],
-        default="full_allowed",
+        default="protected_only",
         help=(
             "Synthetic target style. full_allowed keeps v1 behavior; "
             "protected_only sets allowed_values to []; sparse_allowed keeps only "
