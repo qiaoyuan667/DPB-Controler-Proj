@@ -63,6 +63,14 @@ class HeuristicScorer:
             entailment = 0.98
         elif "\u672a\u6210\u5e74" in premise and "14\u5c81" in hypothesis:
             entailment = 0.12
+        elif "\u5408\u6cd5\u996e\u9152" in premise and "\u672a\u6ee118\u5c81" in hypothesis:
+            entailment = 0.60
+        elif "\u76d1\u62a4\u4eba\u540c\u610f" in premise and "\u672a\u6ee118\u5c81" in hypothesis:
+            entailment = 0.75
+        elif "\u521a\u4e0a\u521d\u4e2d" in premise and "\u672a\u6ee118\u5c81" in hypothesis:
+            entailment = 0.85
+        elif "\u521a\u4e0a\u521d\u4e2d" in premise and "12\u523015\u5c81" in hypothesis:
+            entailment = 0.70
         elif "\u5e7f\u4e1c\u7701" in premise and "\u6df1\u5733\u5e02" in hypothesis:
             entailment = 0.08
         elif "\u6df1\u5733\u5e02" in premise and "\u5e7f\u4e1c\u7701" in hypothesis:
@@ -108,6 +116,34 @@ def default_probes() -> list[PredicateProbe]:
             total_candidates=121,
             remaining_candidates=18,
             note="Exact age should entail the broader minor predicate.",
+        ),
+        PredicateProbe(
+            answer="\u5979\u8fd8\u6ca1\u5230\u53ef\u4ee5\u5408\u6cd5\u996e\u9152\u7684\u5e74\u9f84\u3002",
+            predicate="\u5979\u672a\u6ee118\u5c81\u3002",
+            total_candidates=121,
+            remaining_candidates=18,
+            note="Drinking-age clue: this may imply under 18 in some jurisdictions, but is context-sensitive.",
+        ),
+        PredicateProbe(
+            answer="\u5979\u4ecd\u7136\u9700\u8981\u76d1\u62a4\u4eba\u540c\u610f\u3002",
+            predicate="\u5979\u672a\u6ee118\u5c81\u3002",
+            total_candidates=121,
+            remaining_candidates=18,
+            note="Guardian-consent clue: likely under 18, but depends on the action requiring consent.",
+        ),
+        PredicateProbe(
+            answer="\u5979\u521a\u4e0a\u521d\u4e2d\u3002",
+            predicate="\u5979\u672a\u6ee118\u5c81\u3002",
+            total_candidates=121,
+            remaining_candidates=18,
+            note="School-stage clue: junior middle school strongly suggests under 18.",
+        ),
+        PredicateProbe(
+            answer="\u5979\u521a\u4e0a\u521d\u4e2d\u3002",
+            predicate="\u5979\u5927\u7ea6\u572812\u523015\u5c81\u4e4b\u95f4\u3002",
+            total_candidates=121,
+            remaining_candidates=4,
+            note="School-stage clue with a narrower age-range predicate.",
         ),
         PredicateProbe(
             answer="\u5979\u4f4f\u5728\u5e7f\u4e1c\u7701\u3002",

@@ -14,6 +14,8 @@ Examples:
 - "She is a minor" does not reveal `age = 14`, but it can entail `age < 18`.
 - "She lives in Guangdong" does not reveal `city = Shenzhen`, but it narrows the
   candidate city set.
+- Indirect clues such as "needs guardian consent" or "just started junior middle
+  school" can be tested against age predicates such as `age < 18`.
 
 ## Run
 
@@ -47,6 +49,43 @@ python experiments\nli_semantic_leakage\nli_leakage_demo.py --backend heuristic
 
 This does not validate NLI model quality. It only checks that the leakage score
 calculation and examples behave as expected.
+
+## Value-Conditioned Attribution
+
+`value_conditioned_leakage.py` tests a longer answer against a protected value.
+It generates predicates from the protected value, filters sentence-level NLI
+matches, searches shorter spans in matching sentences, and then scores each
+finding with information content.
+
+Example:
+
+```powershell
+python experiments\nli_semantic_leakage\value_conditioned_leakage.py --protected-value female --attribute-type gender
+```
+
+Use a custom text:
+
+```powershell
+python experiments\nli_semantic_leakage\value_conditioned_leakage.py --protected-value 14 --attribute-type age --text "The patient just started junior middle school."
+```
+
+Use manual predicates instead of generated ones:
+
+```powershell
+python experiments\nli_semantic_leakage\value_conditioned_leakage.py --protected-value female --attribute-type gender --predicates "The patient is female.;The patient uses she/her pronouns."
+```
+
+Use the protected value itself as the predicate:
+
+```powershell
+python experiments\nli_semantic_leakage\value_conditioned_leakage.py --protected-value female --attribute-type generic --value-only-predicate --text "She prefers a late morning appointment."
+```
+
+For NLI models, a short template can be more stable than a bare word:
+
+```powershell
+python experiments\nli_semantic_leakage\value_conditioned_leakage.py --protected-value female --attribute-type generic --value-only-predicate --hypothesis-template "The patient is {value}." --text "She prefers a late morning appointment."
+```
 
 ## Reading the Output
 
