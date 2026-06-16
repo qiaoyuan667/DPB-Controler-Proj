@@ -62,8 +62,10 @@ class EntailmentScorer(Protocol):
 
 class NLIScorer:
     def __init__(self, model_name: str) -> None:
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = AutoModelForSequenceClassification.from_pretrained(model_name)
+        self.model.to(self.device)
         self.model.eval()
         self.id2label = {
             idx: label.lower()
@@ -77,6 +79,7 @@ class NLIScorer:
             return_tensors="pt",
             truncation=True,
         )
+        inputs = {key: value.to(self.device) for key, value in inputs.items()}
         with torch.no_grad():
             logits = self.model(**inputs).logits[0]
         probs = torch.softmax(logits, dim=-1).tolist()
@@ -612,6 +615,7 @@ def main() -> None:
         "attribute_type": args.attribute_type,
         "backend": "nli",
         "model": args.model,
+        "device": str(getattr(scorer, "device", "unknown")),
         "thresholds": {
             "sentence_entailment": args.sentence_threshold,
             "span_entailment": args.span_threshold,
