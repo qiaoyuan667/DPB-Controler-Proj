@@ -1,0 +1,17 @@
+{
+  "facts": [
+    {
+      "fact_id": "age",
+      "fact": "18 years old",
+      "surface_forms": ["age 18"],
+      "fact_type": "age",
+      "privacy_scope": "value",
+      "allowed_abstractions": ["an adult"],
+      "counterfactual_values": ["35 years old", "60 years old"],
+      "default_budget": 2.0,
+      "channel_budgets": {
+        "final": 2.0
+      }
+    }
+  ]
+}

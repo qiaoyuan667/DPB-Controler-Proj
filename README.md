@@ -64,6 +64,14 @@ python examples/hf_generation_demo.py --model gpt2 --secret "$2M" --secret "two 
 In an offline research environment, download models once outside the benchmark
 run, then use local paths for reproducibility.
 
+## Section 5 counterfactual privacy cost
+
+The Section 5 implementation provides per-fact multiple-counterfactual
+construction, teacher-forced HuggingFace likelihood scoring, worst-case
+aggregation, token attribution, and costs that compose through the existing
+`PrivacyAccountant`. See `docs/section5_counterfactual_cost.md` for the policy
+schema and RunPod command.
+
 ## V0 semantic guard and POLAR smoke eval
 
 Run the deterministic v0 guard demo:
