@@ -4,7 +4,7 @@ import argparse
 import json
 import os
 import sys
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +30,14 @@ Task instruction:
 """
 
 
+@dataclass(frozen=True)
+class CandidateSpec:
+    candidate_id: str
+    category: str
+    expected_leak: bool | None
+    text: str
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Score per-fact counterfactual privacy cost with a local HF model."
@@ -40,6 +48,10 @@ def parse_args() -> argparse.Namespace:
     candidate = parser.add_mutually_exclusive_group(required=True)
     candidate.add_argument("--candidate", help="Candidate assistant response.")
     candidate.add_argument("--candidate-file", help="UTF-8 candidate response file.")
+    candidate.add_argument(
+        "--candidate-suite",
+        help="JSON list of candidate_id/category/expected_leak/text records.",
+    )
     parser.add_argument("--task", default="Answer the user's request safely.")
     parser.add_argument(
         "--system-template",
@@ -106,11 +118,7 @@ def main() -> None:
     document = Path(args.document).read_text(encoding="utf-8")
     policy_data = json.loads(Path(args.policy).read_text(encoding="utf-8"))
     policy = PrivacyPolicy.from_mapping(policy_data)
-    candidate = (
-        args.candidate
-        if args.candidate is not None
-        else Path(args.candidate_file).read_text(encoding="utf-8")
-    )
+    candidate_specs = _load_candidates(args)
     template = (
         Path(args.system_template).read_text(encoding="utf-8")
         if args.system_template
@@ -130,7 +138,7 @@ def main() -> None:
         "local_files_only": local_files_only,
         "trust_remote_code": args.trust_remote_code,
         "low_cpu_mem_usage": True,
-        "torch_dtype": _dtype(args.dtype, torch),
+        "dtype": _dtype(args.dtype, torch),
     }
     if args.device_map.casefold() != "none":
         model_kwargs["device_map"] = args.device_map
@@ -162,16 +170,48 @@ def main() -> None:
         messages = [{"role": "system", "content": system}, *history]
         return render_chat_prompt(tokenizer, messages)
 
-    result = estimator.estimate_policy(
-        document,
-        policy,
-        candidate,
-        prompt_builder=prompt_builder,
-        allowed_prompt_occurrences=allowed_occurrences,
-    )
-    payload = asdict(result)
-    payload["costs"] = dict(result.costs)
-    payload["normalized_costs"] = dict(result.normalized_costs)
+    entries: list[dict[str, Any]] = []
+    for index, spec in enumerate(candidate_specs, start=1):
+        if args.candidate_suite:
+            print(
+                f"[{index}/{len(candidate_specs)}] {spec.candidate_id} "
+                f"category={spec.category} expected_leak={spec.expected_leak}"
+            )
+        result = estimator.estimate_policy(
+            document,
+            policy,
+            spec.text,
+            prompt_builder=prompt_builder,
+            allowed_prompt_occurrences=allowed_occurrences,
+        )
+        result_payload = asdict(result)
+        result_payload["costs"] = dict(result.costs)
+        result_payload["normalized_costs"] = dict(result.normalized_costs)
+        entries.append(
+            {
+                "candidate_id": spec.candidate_id,
+                "category": spec.category,
+                "expected_leak": spec.expected_leak,
+                "result": result_payload,
+            }
+        )
+        print_summary(result, top_tokens=args.top_tokens)
+
+    if args.candidate_suite:
+        payload = {
+            "config": {
+                "model": args.model,
+                "document": args.document,
+                "policy": args.policy,
+                "aggregation": args.aggregation,
+                "counterfactual_modes": args.counterfactual_modes,
+                "temperature": args.temperature,
+            },
+            "rankings": _build_rankings(entries),
+            "results": entries,
+        }
+    else:
+        payload = entries[0]["result"]
 
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -179,7 +219,6 @@ def main() -> None:
         json.dumps(payload, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    print_summary(result, top_tokens=args.top_tokens)
     print(f"wrote {output_path}")
 
 
@@ -234,6 +273,72 @@ def _load_history(path: str | None) -> list[dict[str, str]]:
             raise SystemExit("every history message needs role and content")
         history.append({"role": str(item["role"]), "content": str(item["content"])})
     return history
+
+
+def _load_candidates(args: argparse.Namespace) -> list[CandidateSpec]:
+    if args.candidate is not None:
+        return [CandidateSpec("candidate", "unspecified", None, args.candidate)]
+    if args.candidate_file is not None:
+        text = Path(args.candidate_file).read_text(encoding="utf-8").strip()
+        if not text:
+            raise SystemExit("--candidate-file is empty")
+        return [CandidateSpec("candidate", "unspecified", None, text)]
+    return load_candidate_suite(args.candidate_suite)
+
+
+def load_candidate_suite(path: str | Path) -> list[CandidateSpec]:
+    value = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(value, list) or not value:
+        raise SystemExit("--candidate-suite must contain a non-empty JSON list")
+
+    specs: list[CandidateSpec] = []
+    seen_ids: set[str] = set()
+    for index, item in enumerate(value, start=1):
+        if not isinstance(item, dict):
+            raise SystemExit(f"candidate suite item {index} must be an object")
+        candidate_id = str(item.get("candidate_id") or "").strip()
+        text = str(item.get("text") or "").strip()
+        category = str(item.get("category") or "unspecified").strip()
+        expected_leak = item.get("expected_leak")
+        if not candidate_id or not text:
+            raise SystemExit(
+                f"candidate suite item {index} needs candidate_id and text"
+            )
+        if candidate_id in seen_ids:
+            raise SystemExit(f"duplicate candidate_id: {candidate_id}")
+        if expected_leak is not None and not isinstance(expected_leak, bool):
+            raise SystemExit(
+                f"expected_leak for {candidate_id} must be true, false, or null"
+            )
+        seen_ids.add(candidate_id)
+        specs.append(CandidateSpec(candidate_id, category, expected_leak, text))
+    return specs
+
+
+def _build_rankings(entries: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    fact_ids = {
+        fact_id
+        for entry in entries
+        for fact_id in entry["result"]["costs"]
+    }
+    rankings: dict[str, list[dict[str, Any]]] = {}
+    for fact_id in sorted(fact_ids):
+        rows = [
+            {
+                "candidate_id": entry["candidate_id"],
+                "category": entry["category"],
+                "expected_leak": entry["expected_leak"],
+                "cost": entry["result"]["costs"][fact_id],
+                "normalized_cost": entry["result"]["normalized_costs"][fact_id],
+            }
+            for entry in entries
+        ]
+        rankings[fact_id] = sorted(
+            rows,
+            key=lambda row: (row["cost"], row["normalized_cost"]),
+            reverse=True,
+        )
+    return rankings
 
 
 def _parse_allowed_occurrences(values: list[str]) -> dict[str, int]:

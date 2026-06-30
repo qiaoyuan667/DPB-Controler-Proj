@@ -93,6 +93,21 @@ python examples/counterfactual_cost_hf.py \
 After the model is cached under `/workspace`, omit `--allow-download` for an
 offline run.
 
+For the four-case sanity suite, load the model once and score every candidate:
+
+```bash
+python examples/counterfactual_cost_hf.py \
+  --model swiss-ai/Apertus-8B-Instruct-2509 \
+  --document inputs/counterfactual_document.example.txt \
+  --policy inputs/counterfactual_policy.example.json \
+  --candidate-suite inputs/counterfactual_candidates.sanity.json \
+  --aggregation max \
+  --counterfactual-modes placeholder abstraction substitution \
+  --dtype bfloat16 \
+  --device-map auto \
+  --output counterfactual_results/apertus_sanity.json
+```
+
 ## Audit Output
 
 The JSON result records private likelihood, per-fact costs, every intervention,
