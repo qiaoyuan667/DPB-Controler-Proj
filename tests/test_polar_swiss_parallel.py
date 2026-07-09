@@ -1,7 +1,26 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
+from pathlib import Path
 import unittest
+
+POLAR_AB_EVAL = (
+    Path(__file__).resolve().parents[1]
+    / "polar_bench_upstream"
+    / "scripts"
+    / "ab_eval.py"
+)
+if not POLAR_AB_EVAL.exists():
+    raise unittest.SkipTest(
+        "polar_bench_upstream is unavailable; run "
+        "`git submodule update --init --recursive` to enable Swiss POLAR tests"
+    )
+if importlib.util.find_spec("openai") is None:
+    raise unittest.SkipTest(
+        "openai is not installed; run `pip install -r requirements-api.txt` "
+        "to enable Swiss POLAR tests"
+    )
 
 from examples import polar_swiss_api_smoke as smoke
 

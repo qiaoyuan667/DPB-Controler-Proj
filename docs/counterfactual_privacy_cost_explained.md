@@ -95,20 +95,20 @@ If the response is much more likely under the original private document than
 under the counterfactual document, then the response probably depends on
 protected information.
 
-Formally, for instance `i` and counterfactual document `j`, define:
+Formally, for instance `i`, protected fact `a`, and intervention `j`, define:
 
 ```latex
-L_i^{(j)}(z)
+L_{i,a}^{(j)}(z)
 =
 \log P_\theta(z \mid D_i, P_i, T_{\mathrm{instr},i}, H_{i,<k})
 -
-\log P_\theta(z \mid \widetilde{D}_i^{(j)}, P_i, T_{\mathrm{instr},i}, H_{i,<k})
+\log P_\theta(z \mid \widetilde{D}_{i,a}^{(j)}, P_i, T_{\mathrm{instr},i}, H_{i,<k})
 ```
 
 where:
 
 - `D_i` is the original private document,
-- `\widetilde{D}_i^{(j)}` is the `j`-th counterfactual document,
+- `\widetilde{D}_{i,a}^{(j)}` changes only protected fact `a`,
 - `P_i` is the privacy policy,
 - `T_{\mathrm{instr},i}` is the task instruction,
 - `H_{i,<k}` is the dialogue history before step `k`,
@@ -139,16 +139,18 @@ To avoid relying on a single redaction strategy, the runtime can construct
 multiple counterfactuals and use the worst-case loss:
 
 ```latex
-L_i^{\max}(z)
+L_{i,a}^{\max}(z)
 =
-\max_{j \in \{1,\ldots,J\}}
-L_i^{(j)}(z).
+\max_{j \in \{1,\ldots,J_a\}}
+L_{i,a}^{(j)}(z),
+\qquad
+C_{i,a}(z)=\max\{0,L_{i,a}^{\max}(z)\}.
 ```
 
 If:
 
 ```latex
-L_i^{\max}(z) > \epsilon,
+C_{i,a}(z) > b_a^{(k)},
 ```
 
 then the candidate is treated as privacy-risky and can be rejected, penalized,
@@ -321,7 +323,7 @@ signals:
 \left\{
 \rho^{\mathrm{exact}}_a(z),
 \lambda_{\mathrm{sem}} q_a(z),
-\lambda_{\mathrm{cf}} \max(0, L_i^{\max}(z))
+\lambda_{\mathrm{cf}} C_{i,a}(z)
 \right\}.
 ```
 
@@ -330,11 +332,11 @@ Here:
 - `\rho^{\mathrm{exact}}_a(z)` is infinite if `z` directly contains a protected
   surface form for attribute `a`,
 - `q_a(z)` is the semantic leakage score,
-- `L_i^{\max}(z)` is the worst-case counterfactual privacy loss,
+- `C_{i,a}(z)` is the positive worst-case counterfactual cost for fact `a`,
 - `\lambda_{\mathrm{sem}}` and `\lambda_{\mathrm{cf}}` scale the semantic and
   counterfactual signals.
 
-The `max(0, L_i^{\max}(z))` term means that a candidate only consumes
+The `C_{i,a}(z)` term means that a candidate only consumes
 counterfactual privacy budget when it is more likely under the private document
 than under the counterfactual document.
 
@@ -387,4 +389,3 @@ Three-sentence version:
 > likelihood of a candidate response under the original private document and
 > under protected-information-free counterfactual documents, flagging responses
 > that only become likely when the protected fact is present.
-

@@ -125,13 +125,13 @@ Input:
   Candidate response z = (z_1, ..., z_T)
   Counterfactual builder C
   Language model p_theta
-  Number of counterfactuals J
+  Protected facts A_protected,i
 
 Counterfactual construction:
-  1. For j = 1 to J:
-       D_tilde_i^(j) = C(D_i, A_protected,i)
-       where protected values are replaced by placeholders, removals,
-       or allowed abstractions, while task-relevant values are preserved.
+  1. For each protected fact a, construct J_a valid interventions:
+       D_tilde_i,a^(j) = C(D_i, a)
+       where only a is replaced by a placeholder, allowed abstraction,
+       or type-preserving value, while all other facts are preserved.
 
 Likelihood scoring:
   2. Compute private conditional log-likelihood:
@@ -140,26 +140,27 @@ Likelihood scoring:
            z_t | D_i, P_i, T_instr,i, H_i,<k, z_<t
          )
 
-  3. For each counterfactual document D_tilde_i^(j), compute:
-       log P_public^(j) =
+  3. For each fact a and document D_tilde_i,a^(j), compute:
+       log P_public,a^(j) =
          sum_t log p_theta(
-           z_t | D_tilde_i^(j), P_i, T_instr,i, H_i,<k, z_<t
+           z_t | D_tilde_i,a^(j), P_i, T_instr,i, H_i,<k, z_<t
          )
 
-  4. For each j, compute privacy loss:
-       L_i^(j)(z) = log P_private - log P_public^(j)
+  4. For each a and j, compute privacy loss:
+       L_i,a^(j)(z) = log P_private - log P_public,a^(j)
 
-  5. Aggregate conservatively:
-       L_i^max(z) = max_j L_i^(j)(z)
+  5. Aggregate independently for each fact:
+       L_i,a^max(z) = max_j L_i,a^(j)(z)
+       C_i,a(z) = max(0, L_i,a^max(z))
 
 Decision:
-  6. If L_i^max(z) > epsilon:
+  6. If C_i,a(z) exceeds the remaining budget for any a:
        mark z as privacy-risky
      else:
        allow z to continue to the next runtime check
 
 Output:
-  Counterfactual privacy loss L_i^max(z)
+  Per-fact counterfactual costs {C_i,a(z)}
 ```
 
 **Interpretation.** If a candidate is much more likely when the model sees the
@@ -220,7 +221,7 @@ Input:
   Utility function U(z)
   Exact leakage checker rho_exact
   Semantic verifier q_a(z)
-  Counterfactual privacy loss L_i^max(z)
+  Per-fact counterfactual cost C_i,a(z)
   Weights lambda_sem and lambda_cf
 
 For each candidate z in Z_k:
@@ -233,13 +234,13 @@ For each candidate z in Z_k:
        q_a(z) in [0, 1]
 
   3. Compute counterfactual privacy cost:
-       max(0, L_i^max(z))
+       C_i,a(z)
 
   4. Combine per-attribute privacy cost:
        rho_a(z) = max {
          rho_exact_a(z),
          lambda_sem * q_a(z),
-         lambda_cf * max(0, L_i^max(z))
+         lambda_cf * C_i,a(z)
        }
 
   5. Check budget feasibility:
@@ -303,7 +304,7 @@ flowchart TD
 
     H --> I["Exact leakage check"]
     H --> J["Semantic leakage verifier q_a(z)"]
-    H --> K["Counterfactual privacy cost L_i^max(z)"]
+    H --> K["Per-fact counterfactual cost C_i,a(z)"]
 
     I --> L["Per-attribute privacy cost rho_a(z)"]
     J --> L
@@ -360,4 +361,3 @@ One-sentence version:
 
 > Runtime means privacy enforcement at execution time, every time the agent
 > tries to communicate, rather than only in training or at final-output cleanup.
-

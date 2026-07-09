@@ -34,11 +34,8 @@
 \caption{Counterfactual Privacy Cost Estimation}
 \label{alg:counterfactual-privacy-cost}
 \begin{algorithmic}[1]
-\Require Private document $D_i$, policy $P_i$, task instruction $T_{\mathrm{instr},i}$, dialogue history $H_{i,<k}$, candidate response $z=(z_1,\ldots,z_T)$, counterfactual builder $\mathcal{C}$, model $p_\theta$, number of counterfactuals $J$
-\Ensure Worst-case counterfactual privacy loss $L_i^{\max}(z)$
-\For{$j = 1$ to $J$}
-    \State $\widetilde{D}^{(j)}_i \gets \mathcal{C}(D_i, A_{\mathrm{protected},i})$
-\EndFor
+\Require Private document $D_i$, protected facts $A_{\mathrm{protected},i}$, policy $P_i$, task instruction $T_{\mathrm{instr},i}$, dialogue history $H_{i,<k}$, candidate response $z=(z_1,\ldots,z_T)$, counterfactual builder $\mathcal{C}$, model $p_\theta$
+\Ensure Per-fact counterfactual costs $\{C_{i,a}(z)\}_{a \in A_{\mathrm{protected},i}}$
 \State Compute private conditional log-likelihood:
 \[
 \log P_{\mathrm{priv}}
@@ -49,21 +46,25 @@
 z_t \mid D_i, P_i, T_{\mathrm{instr},i}, H_{i,<k}, z_{<t}
 \right)
 \]
-\For{$j = 1$ to $J$}
-    \State Compute counterfactual conditional log-likelihood:
-    \[
-    \log P_{\mathrm{cf}}^{(j)}
-    \gets
-    \sum_{t=1}^{T}
-    \log p_\theta
-    \left(
-    z_t \mid \widetilde{D}^{(j)}_i, P_i, T_{\mathrm{instr},i}, H_{i,<k}, z_{<t}
-    \right)
-    \]
-    \State $L_i^{(j)}(z) \gets \log P_{\mathrm{priv}} - \log P_{\mathrm{cf}}^{(j)}$
+\ForAll{$a \in A_{\mathrm{protected},i}$}
+    \State Construct valid interventions $\{\widetilde{D}^{(j)}_{i,a}\}_{j=1}^{J_a} \gets \mathcal{C}(D_i,a)$ that modify only $a$
+    \For{$j = 1$ to $J_a$}
+        \State Compute counterfactual conditional log-likelihood:
+        \[
+        \log P_{\mathrm{cf},a}^{(j)}
+        \gets
+        \sum_{t=1}^{T}
+        \log p_\theta
+        \left(
+        z_t \mid \widetilde{D}^{(j)}_{i,a}, P_i, T_{\mathrm{instr},i}, H_{i,<k}, z_{<t}
+        \right)
+        \]
+        \State $L_{i,a}^{(j)}(z) \gets \log P_{\mathrm{priv}} - \log P_{\mathrm{cf},a}^{(j)}$
+    \EndFor
+    \State $L_{i,a}^{\max}(z) \gets \max_{j \in \{1,\ldots,J_a\}} L_{i,a}^{(j)}(z)$
+    \State $C_{i,a}(z) \gets \max\{0,L_{i,a}^{\max}(z)\}$
 \EndFor
-\State $L_i^{\max}(z) \gets \max_{j \in \{1,\ldots,J\}} L_i^{(j)}(z)$
-\State \Return $L_i^{\max}(z)$
+\State \Return $\{C_{i,a}(z)\}_{a \in A_{\mathrm{protected},i}}$
 \end{algorithmic}
 \end{algorithm}
 
@@ -71,7 +72,7 @@ z_t \mid D_i, P_i, T_{\mathrm{instr},i}, H_{i,<k}, z_{<t}
 \caption{Privacy-Budgeted Runtime Selection}
 \label{alg:privacy-budgeted-runtime-selection}
 \begin{algorithmic}[1]
-\Require Candidate actions $Z_k$, protected attributes $A_{\mathrm{protected},i}$, remaining budgets $b_a^{(k)}$, utility function $U(z)$, exact leakage cost $\rho^{\mathrm{exact}}_a(z)$, semantic verifier score $q_a(z)$, counterfactual privacy loss $L_i^{\max}(z)$, weights $\lambda_{\mathrm{sem}}$ and $\lambda_{\mathrm{cf}}$
+\Require Candidate actions $Z_k$, protected attributes $A_{\mathrm{protected},i}$, remaining budgets $b_a^{(k)}$, utility function $U(z)$, exact leakage cost $\rho^{\mathrm{exact}}_a(z)$, semantic verifier score $q_a(z)$, counterfactual cost $C_{i,a}(z)$, weights $\lambda_{\mathrm{sem}}$ and $\lambda_{\mathrm{cf}}$
 \Ensure Selected safe action, rewritten abstraction, or safe refusal
 \State Initialize feasible set $\mathcal{F}_k \gets \emptyset$
 \ForAll{$z \in Z_k$}
@@ -84,7 +85,7 @@ z_t \mid D_i, P_i, T_{\mathrm{instr},i}, H_{i,<k}, z_{<t}
         \left\{
         \rho^{\mathrm{exact}}_a(z),
         \lambda_{\mathrm{sem}} q_a(z),
-        \lambda_{\mathrm{cf}} \max(0, L_i^{\max}(z))
+        \lambda_{\mathrm{cf}} C_{i,a}(z)
         \right\}
         \]
     \EndFor
@@ -115,4 +116,3 @@ z_t \mid D_i, P_i, T_{\mathrm{instr},i}, H_{i,<k}, z_{<t}
 \EndIf
 \end{algorithmic}
 \end{algorithm}
-
